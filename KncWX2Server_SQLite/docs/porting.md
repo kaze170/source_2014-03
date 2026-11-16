@@ -112,7 +112,7 @@ struct actually contain".
 ## Testing
 
 ```sh
-make test                                  # 90 tests, ~2 s
+make test                                  # 97 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -121,6 +121,7 @@ build/linux/bin/knc_tests --filter Db      # one suite
 | `Wire` | serializer both directions, every primitive, containers, `SerBuffer` compression, envelope offsets, crypto known answers |
 | `PacketLayout` | the wire size and field order of every client facing packet, straight off the 2014 `SERIALIZE_DEFINE_PUT` bodies (empty-string baselines, the delete-ack guild uid, the unsigned seal byte) |
 | `PacketFlags` | the feature flags that decide *which fields exist*, so a regenerated flag table cannot move bytes without failing a test |
+| `PacketBytes` | the bytes the services really emit, walked with a bare `Serializer` in the 2014 field order instead of round-tripped through our own serializer |
 | `Net` | framing, SPI-0 handshake over a real socket, sealed frames, ICV mismatch, partial frames, dispatch |
 | `Db` | schema apply + idempotency, accounts, units, inventory, transactions, foreign keys |
 | `Game` | level curve, stat table, character load/save, inventory categories, nickname/enchant/drop rules |

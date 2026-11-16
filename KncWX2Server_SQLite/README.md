@@ -6,7 +6,7 @@ fifteen ODBC DSNs, built from the original wire format so a 2014 client can stil
 ```
 kncserver    one process replacing LoginServer + ChannelServer + GameServer (+ Center/Global)
 knc_dbtool   create / migrate / inspect the database
-knc_tests    the test runner (90 tests, no external dependencies)
+knc_tests    the test runner (97 tests, no external dependencies)
 ```
 
 ## Why this exists
@@ -43,8 +43,8 @@ sql/            001_core .. 005_progress, embedded into the binary by tools/gen_
 config/         knc.ini (one section per former server)
 tools/          generators (run with `make gen`), plus dump_original_layouts.py (reads the
                 2014 headers) and verify_packets.py (compares every packet layout with them)
-tests/          TestWire, TestPacketLayout, TestNet, TestDb, TestGame,
-                TestLoginService, TestChannelService, TestServer
+tests/          TestWire, TestPacketLayout, TestPacketBytes, TestNet, TestDb,
+                TestGame, TestLoginService, TestChannelService, TestServer
 third_party/    SQLite 3.54.1 amalgamation, zlib 1.2.3
 ```
 
@@ -54,7 +54,7 @@ Linux / MinGW (what CI and this sandbox use):
 
 ```sh
 make -j2          # server, tools, tests -> build/linux/bin
-make test         # runs the 90 tests
+make test         # runs the 97 tests
 make check        # knc_dbtool init + integrity check on a scratch database
 make gen          # regenerate the .gen.* sources from ../KncWX2Server
 ```
