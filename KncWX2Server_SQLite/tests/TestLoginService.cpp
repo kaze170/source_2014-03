@@ -324,7 +324,9 @@ KTEST(Login, newUserEnforcesTheNicknameRules) {
     KCHECK(responder.last(ack));
     KCHECK_EQ(ack.ok, static_cast<int>(kErrNewAccountPasswordLength));
 
-    // Duplicate login id: the UNIQUE(LoginID) violation is reported as a transaction failure.
+    // Duplicate login id: the UNIQUE(LoginID) violation is reported as a transaction failure. The
+    // database layer logs that violation at error level, so it is muted for this expected failure.
+    Logger::instance().setLevel(LogLevel::kOff);
     NewUserJoinReq duplicate = shortId;
     duplicate.id = WideString(u"test");
     duplicate.password = WideString(u"secret12");
@@ -333,6 +335,7 @@ KTEST(Login, newUserEnforcesTheNicknameRules) {
     KCHECK(responder.last(ack));
     KCHECK_EQ(ack.ok, static_cast<int>(kErrNewAccountTransaction));
     KCHECK_EQ(f.repos().accounts.count(), std::int64_t(2));  // test + gm, nothing was added
+    Logger::instance().setLevel(LogLevel::kError);
 }
 
 // --------------------------------------------------------------------------- dispatch

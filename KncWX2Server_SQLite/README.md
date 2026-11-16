@@ -21,13 +21,13 @@ dependency tree.
 This rewrite keeps the part that defines the game - the encrypted X2 protocol, the event envelope,
 the packet layouts and the 2014 data tables - and replaces the transport plumbing:
 
-| 2014                                                | here                                      |
-| --------------------------------------------------- | ----------------------------------------- |
-| 5 processes, inter-server events over TCP            | 1 process, 1 `Reactor`, direct calls      |
-| 6 ODBC DSNs + `DBThreadManager` + stored procedures  | one SQLite file + typed repositories      |
-| `KSecureBuffer` (DES-CBC + HMAC-MD5-10)              | reimplemented bit exactly (`ksec`)        |
-| `KSerializer` (untagged, big endian)                 | reimplemented bit exactly (`kcore`)       |
-| `ExpTable.lua`, `StatTable.lua`, `ServerDefine.h`    | generated into `.gen.cpp/.h` at build time |
+| 2014                                                | here                                       |
+| --------------------------------------------------- | ------------------------------------------ |
+| 5 processes, inter-server events over TCP           | 1 process, 1 `Reactor`, direct calls       |
+| 6 ODBC DSNs + `DBThreadManager` + stored procedures | one SQLite file + typed repositories       |
+| `KSecureBuffer` (DES-CBC + HMAC-MD5-10)             | reimplemented bit exactly (`ksec`)         |
+| `KSerializer` (untagged, big endian)                | reimplemented bit exactly (`kcore`)        |
+| `ExpTable.lua`, `StatTable.lua`, `ServerDefine.h`   | generated into `.gen.cpp/.h` at build time |
 
 ## Layout
 
@@ -39,7 +39,6 @@ include/knet    Socket, Reactor (poll), Session (framing + seal), Listener
 include/kdb     Database (SQLite), Schema, Repositories (accounts/units/inventory/social/...)
 include/kgame   ExpTable, StatTable, Character, Rules (nicknames, enchant, drops, exp bonus)
 include/kserver Config (ini), LoginService, ChannelService, ServerSession, Server
-include/knet    ...
 sql/            001_core .. 005_progress, embedded into the binary by tools/gen_schema.py
 config/         knc.ini (one section per former server)
 tools/          generators (run with `make gen`)

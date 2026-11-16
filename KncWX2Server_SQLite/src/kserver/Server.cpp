@@ -158,6 +158,11 @@ void Server::run(int maxIterations) {
 
 void Server::stop() {
     for (auto& listener : listeners_) listener->stop();
+    // The listener owns the accept/active counters, so the totals are kept before the listeners go
+    // away: a stopped server still reports what it served.
+    for (const auto& [listener, listenerRole] : listenerRoles_) {
+        finalAccepted_[listenerRole] += listener->accepted();
+    }
     listeners_.clear();
     sessions_.clear();
     listenerRoles_.clear();
@@ -193,6 +198,8 @@ std::size_t Server::acceptedOn(PortRole role) const {
     for (const auto& [listener, listenerRole] : listenerRoles_) {
         if (listenerRole == role) total += listener->accepted();
     }
+    const auto kept = finalAccepted_.find(role);
+    if (kept != finalAccepted_.end()) total += kept->second;
     return total;
 }
 

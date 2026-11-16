@@ -337,122 +337,28 @@ Set0 = 1 | Test Server | 127.0.0.1 | 7002 | 40
     KCHECK(!broken.validate(nullptr));
 }
 
-// --------------------------------------------------------------------------- login service
-KTEST(Server, loginServiceAnswersTheHandshake) {
-    // A database on its own, no sockets: the service is transport agnostic.
-    db::Database database;
-    db::Database::Config dbConfig;
-    dbConfig.memory = true;
-    std::string error;
-    KCHECK(database.open(dbConfig, &error));
-    KCHECK(db::applySchema(database).ok);
-    KCHECK(db::seedDefaultAccounts(database, &error));
-    auto repos = db::makeRepositories(database);
+// --------------------------------------------------------------------------- counters
+KTEST(Server, startBindsEveryEnabledPortAndReportsCounters) {
+    KCHECK(net::startupSockets());
+    ServerFixture fixture;
+    KCHECK(fixture.start());
 
-    Config config = Config::defaults();
-    LoginService service(*repos, config);
+    KCHECK(fixture.server().started());
+    KCHECK_EQ(fixture.server().activeOn(PortRole::kLogin), std::size_t(0));
+    KCHECK_EQ(fixture.server().acceptedOn(PortRole::kLogin), std::size_t(0));
 
-    struct Recorder : LoginResponder {
-        std::vector<std::pair<EventId, SerBuffer>> sent;
-        std::string ip = "127.0.0.1";
-        int users = 1;
-        bool send(EventId id, const SerBuffer& payload) override {
-            sent.emplace_back(id, payload);
-            return true;
-        }
-        void disconnect(const std::string&) override {}
-        const std::string& peerIp() const override { return ip; }
-        int connectedUsers() const override { return users; }
-    };
+    // A connection that only completes the handshake still counts as accepted and active.
+    RawClient client;
+    KCHECK(client.connectTo(fixture.loginPort()));
+    KCHECK(client.handshake());
+    KCHECK_EQ(fixture.server().acceptedOn(PortRole::kLogin), std::size_t(1));
+    KCHECK_EQ(fixture.server().activeOn(PortRole::kLogin), std::size_t(1));
+    KCHECK_EQ(fixture.server().acceptedOn(PortRole::kChannel), std::size_t(0));
 
-    AccountSession state;
-    Recorder responder;
-
-    // Wrong version -> ERR_CONNECT_00 (3).
-    ConnectReq wrong;
-    wrong.version = u"1999010100";
-    SerBuffer payload;
-    encodePayload(wrong, payload);
-    KCHECK(!service.handleConnect(state, responder, payload));
-    KCHECK_EQ(responder.sent.size(), std::size_t(1));
-    ConnectAck ack;
-    KCHECK(decodePayload(responder.sent.back().second, ack));
-    KCHECK_EQ(ack.ok, static_cast<int>(kErrConnectVersion));
-
-    // Correct version -> NET_OK, channel id and UDP port from the config.
-    responder.sent.clear();
-    ConnectReq good;
-    good.version = config.version();
-    encodePayload(good, payload);
-    KCHECK(service.handleConnect(state, responder, payload));
-    KCHECK_EQ(responder.sent.size(), std::size_t(1));
-    KCHECK(decodePayload(responder.sent.back().second, ack));
-    KCHECK_EQ(ack.ok, static_cast<int>(kNetOk));
-    KCHECK_EQ(ack.channelId, 1);
-    KCHECK_EQ(ack.udpPort, 9151);
-
-    // Full server -> ERR_CONNECT_04 (4).
-    responder.users = 100000;
-    responder.sent.clear();
-    KCHECK(!service.handleConnect(state, responder, payload));
-    KCHECK(decodePayload(responder.sent.back().second, ack));
-    KCHECK_EQ(ack.ok, static_cast<int>(kErrConnectFull));
-    responder.users = 1;
-
-    // Authentication: seeded account test/test.
-    AccountSession loginState;
-    loginState.state = LoginState::kConnectedClient;
-    responder.sent.clear();
-    UserAuthenticateReq auth;
-    auth.userId = u"test";
-    auth.password = u"test";
-    auth.machineId = "machine-1";
-    encodePayload(auth, payload);
-    KCHECK(service.handleVerifyAccount(loginState, responder, payload));
-    KCHECK(loginState.authenticated);
-    VerifyAccountAck verifyAck;
-    KCHECK(decodePayload(responder.sent.back().second, verifyAck));
-    KCHECK_EQ(verifyAck.ok, static_cast<int>(kNetOk));
-    KCHECK_EQ(verifyAck.accountInfo.id, WideString(u"test"));
-    KCHECK(verifyAck.accountInfo.userUid > 0);
-    KCHECK_EQ(service.successfulLogins(), 1LL);
-
-    // Bad password -> ERR_VERIFY_06 (12), and the session stays unauthenticated.
-    AccountSession badState;
-    badState.state = LoginState::kConnectedClient;
-    auth.password = u"wrong";
-    encodePayload(auth, payload);
-    responder.sent.clear();
-    KCHECK(!service.handleVerifyAccount(badState, responder, payload));
-    KCHECK(decodePayload(responder.sent.back().second, verifyAck));
-    KCHECK_EQ(verifyAck.ok, static_cast<int>(kErrVerifyBadPassword));
-    KCHECK(!badState.authenticated);
-
-    // Unknown account -> ERR_VERIFY_04 (10).
-    auth.userId = u"nobody";
-    auth.password = u"test";
-    encodePayload(auth, payload);
-    responder.sent.clear();
-    KCHECK(!service.handleVerifyAccount(badState, responder, payload));
-    KCHECK(decodePayload(responder.sent.back().second, verifyAck));
-    KCHECK_EQ(verifyAck.ok, static_cast<int>(kErrVerifyNoUser));
-
-    // A blocked account answers ERR_VERIFY_11 (15) and carries the block reason.
-    db::AccountRecord account;
-    std::int64_t gmUid = 0;
-    KCHECK(repos->accounts.authenticate("gm", "gm", "127.0.0.1", &account) == db::AuthOutcome::kOk);
-    // A block is "active" when BlockEndTime is non-empty (kdb models it that way), so a permanent
-    // block uses the far future rather than an empty string.
-    KCHECK(repos->accounts.applyBlock(account.uid, "9999-12-31 23:59:59", "hacking", 0, "", ""));
-    (void)gmUid;
-    auth.userId = u"gm";
-    auth.password = u"gm";
-    encodePayload(auth, payload);
-    responder.sent.clear();
-    KCHECK(!service.handleVerifyAccount(badState, responder, payload));
-    KCHECK(decodePayload(responder.sent.back().second, verifyAck));
-    KCHECK_EQ(verifyAck.ok, static_cast<int>(kErrVerifyBlocked));
-    KCHECK(verifyAck.accountInfo.blockInfo.blockReason == u"hacking");
+    client.close();
+    fixture.stop();
+    // Closing the client is asynchronous, so the counters are only asserted while it was open.
+    KCHECK_EQ(fixture.server().acceptedOn(PortRole::kLogin), std::size_t(1));
 }
 
 // --------------------------------------------------------------------------- end to end

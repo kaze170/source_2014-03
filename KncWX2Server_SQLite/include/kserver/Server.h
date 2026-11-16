@@ -51,6 +51,8 @@ public:
     int connectedUsers() const { return static_cast<int>(sessions_.size()); }
     ServerSession* findSession(net::Session& session);
 
+    bool started() const { return started_; }
+
     db::Database& database() { return db_; }
     db::Repositories& repositories() { return repos_; }
     LoginService& login() { return login_; }
@@ -77,6 +79,9 @@ private:
     std::vector<std::shared_ptr<net::Listener>> listeners_;
     std::vector<std::pair<net::Listener*, PortRole>> listenerRoles_;
     std::map<net::Session*, std::shared_ptr<ServerSession>> sessions_;
+    // Totals kept from listeners that have already been destroyed (stop() clears the listeners).
+    std::map<PortRole, std::size_t> finalAccepted_;
+
     bool started_ = false;
 };
 
