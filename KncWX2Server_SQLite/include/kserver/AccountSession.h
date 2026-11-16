@@ -6,6 +6,7 @@
 #pragma once
 
 #include <cstdint>
+#include <set>
 #include <string>
 
 #include "kcore/Types.h"
@@ -30,6 +31,10 @@ struct AccountSession {
     int serverSetId = 0;
     std::string machineId;
     std::string clientIp;
+    // KInventory::m_setGetMyInventory: which inventory categories were already handed to the
+    // 2014 client ("인벤정보는 한번만 준다!"). Cleared by KInventory::Clear, i.e. when the unit
+    // is (re)loaded - see handleSelectUnit.
+    std::set<int> reportedInventoryCategories;
     std::int64_t connectedAt = 0;
 
     void reset() {
@@ -40,6 +45,7 @@ struct AccountSession {
         channelId = 0;
         serverSetId = 0;
         machineId.clear();
+        reportedInventoryCategories.clear();
     }
 };
 

@@ -39,10 +39,13 @@ CREATE TABLE IF NOT EXISTS Accounts (
 );
 CREATE INDEX IF NOT EXISTS IX_Accounts_LoginID ON Accounts(LoginID);
 
+-- One row per (account, key). The primary key used to be AccountUID alone, which made the table
+-- hold a single option per account: writing a second key silently replaced the first.
 CREATE TABLE IF NOT EXISTS AccountOptions (
-    AccountUID     INTEGER NOT NULL PRIMARY KEY REFERENCES Accounts(AccountUID) ON DELETE CASCADE,
+    AccountUID     INTEGER NOT NULL REFERENCES Accounts(AccountUID) ON DELETE CASCADE,
     OptKey         TEXT    NOT NULL,
-    OptValue       INTEGER NOT NULL DEFAULT 0
+    OptValue       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (AccountUID, OptKey)
 );
 
 CREATE TABLE IF NOT EXISTS LoginHistory (

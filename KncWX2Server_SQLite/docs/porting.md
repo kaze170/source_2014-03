@@ -98,6 +98,28 @@ comparison, so the guard rail cannot rot into a script that always prints "match
 `--sizes` prints the fixed byte count of each), which is the fastest way to answer "what does the 2014
 struct actually contain".
 
+### The inventory answer: order, empty bags, and "only once"
+
+`EGS_GET_MY_INVENTORY_REQ` looks like a simple list reply but the 2014 handler has three properties
+that a naive implementation gets wrong, and each of them is visible to the client:
+
+* **The ack comes last.** `GSUserGameCommon.cpp:1158` sends one
+  `EGS_SELECT_UNIT_INVENTORY_INFO_NOT` per bag and only then `EGS_GET_MY_INVENTORY_ACK`. A client
+  that waits for the ack before building the window sees an empty inventory if the order is
+  reversed.
+* **Empty bags are not sent at all.** `KInventory::GetSelectUnitInventoryInfo` skips a category when
+  it holds no items, so a fresh character receives exactly one frame: the ack.
+* **Bank and worn equipment are excluded.** The loop runs `ST_EQUIP` (1) .. `ST_END` (16) but skips
+  `ST_BANK` (8) and `ST_E_EQUIP` (9).
+
+A fourth one is easy to miss: `GetInventoryInfo` records the category in `m_setGetMyInventory`
+*before* looking at the items, with the comment "인벤정보는 한번만 준다!" - so a second request for
+the same unit answers with the ack alone, and the marks are only cleared by `KInventory::Clear`,
+which runs when the unit is loaded. `AccountSession::reportedInventoryCategories` mirrors that.
+
+The two flags on the ack (`m_bIsRecommend`, `m_bSharingBank`) come from the account, not from the
+constants the rewrite started with, so they live in `AccountOptions`.
+
 ### Checking the error codes
 
 Every reply carries a bare integer, so "wrong password" is only meaningful because
@@ -147,7 +169,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 105 tests, ~2 s
+make test                                  # 111 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 

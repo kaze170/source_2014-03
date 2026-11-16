@@ -233,6 +233,88 @@ KTEST(Db, channelsAndServerList) {
     KCHECK_EQ(channels[0].currentUser, 137);
 }
 
+// AccountOptions holds one row per (account, key). The primary key used to be AccountUID alone,
+// which let a second option silently replace the first - the reason isRecommend could never have
+// been stored next to anything else.
+KTEST(Db, accountOptionsKeepEveryKey) {
+    TempDb t;
+    KCHECK(seedDefaultAccounts(t.db, nullptr));
+    AccountRecord account;
+    KCHECK(t.r().accounts.authenticate("test", "test", "127.0.0.1", &account) == AuthOutcome::kOk);
+    const std::int64_t uid = account.uid;
+    KCHECK(t.r().accounts.setOption(uid, kOptIsRecommend, 1));
+    KCHECK(t.r().accounts.setOption(uid, kOptShareBank, 1));
+    KCHECK_EQ(t.r().accounts.getOption(uid, kOptIsRecommend), std::int64_t(1));
+    KCHECK_EQ(t.r().accounts.getOption(uid, kOptShareBank), std::int64_t(1));
+    KCHECK_EQ(t.r().accounts.getOption(uid, "NoSuchOption", 7), std::int64_t(7));
+
+    // Overwriting one key leaves the other alone.
+    KCHECK(t.r().accounts.setOption(uid, kOptIsRecommend, 0));
+    KCHECK_EQ(t.r().accounts.getOption(uid, kOptIsRecommend), std::int64_t(0));
+    KCHECK_EQ(t.r().accounts.getOption(uid, kOptShareBank), std::int64_t(1));
+}
+
+// A database created before that fix still has the single column key; applySchema has to rebuild
+// the table, keeping the rows that are already there.
+KTEST(Db, accountOptionsWithTheOldKeyAreMigrated) {
+    const std::string path = (std::filesystem::temp_directory_path() / "knc_old_opt.db").string();
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    std::filesystem::remove(path + "-wal", ec);
+    std::filesystem::remove(path + "-shm", ec);
+
+    {
+        Database db;
+        Database::Config cfg;
+        cfg.path = path;
+        KCHECK(db.open(cfg, nullptr));
+        // The pre-fix shape, plus the rest of the schema so applySchema finds what it expects.
+        KCHECK(db.exec("CREATE TABLE Accounts (AccountUID INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,"
+                       "LoginID TEXT NOT NULL UNIQUE, PasswordHash TEXT NOT NULL,"
+                       "PasswordSalt TEXT NOT NULL DEFAULT '', DisplayName TEXT NOT NULL DEFAULT '',"
+                       "AuthLevel INTEGER NOT NULL DEFAULT 0, InternalUser INTEGER NOT NULL DEFAULT 0,"
+                       "GuestUser INTEGER NOT NULL DEFAULT 0, Age INTEGER NOT NULL DEFAULT 0,"
+                       "Sex INTEGER NOT NULL DEFAULT 0, NexonSN INTEGER NOT NULL DEFAULT 0,"
+                       "BlockEndTime TEXT NOT NULL DEFAULT '', BlockReason TEXT NOT NULL DEFAULT '',"
+                       "BlockType INTEGER NOT NULL DEFAULT 0, BlockReason2 TEXT NOT NULL DEFAULT '',"
+                       "BlockEndDate TEXT NOT NULL DEFAULT '', LastLoginAt INTEGER NOT NULL DEFAULT 0,"
+                       "LastLoginIp TEXT NOT NULL DEFAULT '', CreatedAt INTEGER NOT NULL DEFAULT 0,"
+                       "IsDeleted INTEGER NOT NULL DEFAULT 0);"));
+        KCHECK(db.exec("CREATE TABLE AccountOptions ("
+                       "AccountUID INTEGER NOT NULL PRIMARY KEY REFERENCES Accounts(AccountUID)"
+                       " ON DELETE CASCADE, OptKey TEXT NOT NULL,"
+                       "OptValue INTEGER NOT NULL DEFAULT 0);"));
+        KCHECK(db.exec("INSERT INTO Accounts(LoginID, PasswordHash) VALUES('old', 'x');"));
+        KCHECK(db.run("INSERT INTO AccountOptions(AccountUID, OptKey, OptValue) VALUES(?,?,?);",
+                      {Value(1), Value("IsRecommend"), Value(1)}));
+    }
+
+    {
+        Database db;
+        Database::Config cfg;
+        cfg.path = path;
+        KCHECK(db.open(cfg, nullptr));
+        const MigrationResult migration = applySchema(db);
+        KCHECK(migration.ok);
+
+        // The old row survived and a second key now fits beside it.
+        KCHECK_EQ(db.query("SELECT OptValue FROM AccountOptions WHERE AccountUID=1 AND OptKey=?;",
+                           {Value("IsRecommend")})
+                      .front()
+                      .at("OptValue")
+                      .asInt(),
+                  std::int64_t(1));
+        Repositories repos = *makeRepositories(db);
+        KCHECK(repos.accounts.setOption(1, kOptShareBank, 1));
+        KCHECK_EQ(repos.accounts.getOption(1, kOptIsRecommend), std::int64_t(1));
+        KCHECK_EQ(repos.accounts.getOption(1, kOptShareBank), std::int64_t(1));
+    }
+
+    std::filesystem::remove(path, ec);
+    std::filesystem::remove(path + "-wal", ec);
+    std::filesystem::remove(path + "-shm", ec);
+}
+
 KTEST(Db, transactionsRollBack) {
     TempDb temp;
     KCHECK(seedDefaultAccounts(temp.db));

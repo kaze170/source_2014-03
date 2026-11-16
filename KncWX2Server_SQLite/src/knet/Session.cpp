@@ -152,8 +152,6 @@ void Session::onClose(Reactor& reactor) {
         // makes the kernel send RST, and RST throws away data we had already written - which is
         // exactly the reply a handler produces before deciding to hang up (a blocked account is
         // told why, then dropped).
-        flush();
-        shutdownWrite(sock_);
         closeSocket(sock_);
         sock_ = kInvalidSocket;
     }
@@ -168,6 +166,12 @@ void Session::close(const std::string& reason) {
     KLOG(LogLevel::kDebug, "session") << name_ << " closing: " << reason;
     closed_ = true;
     if (sock_ != kInvalidSocket) {
+        // Push out whatever is still queued, then half close so the peer reads an orderly FIN.
+        // Closing straight away would leave the reply a handler just produced in the kernel
+        // buffer, and the pending unread input would turn the close into an RST that discards it -
+        // exactly the EGS_VERIFY_ACCOUNT_ACK a blocked account is supposed to receive.
+        flush();
+        shutdownWrite(sock_);
         closeSocket(sock_);
         sock_ = kInvalidSocket;
     }

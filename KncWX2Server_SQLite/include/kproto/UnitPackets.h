@@ -205,6 +205,32 @@ struct ItemAttributeEnchantInfo {
     }
 };
 
+// CXSLInventory::SORT_TYPE (Common/X2Data/XSLInventory.h). The inventory packet iterates
+// ST_EQUIP..ST_END and skips the two categories a player cannot open from this screen.
+enum InventoryCategory {
+    kStNone = 0,
+    kStEquip = 1,       // 장비
+    kStAccessory = 2,   // 악세사리
+    kStMaterial = 3,    // 재료
+    kStSpecial = 4,     // 특수
+    kStQuest = 5,       // 퀘스트
+    kStQuickSlot = 6,   // 소비
+    kStAvarta = 7,      // 아바타
+    kStBank = 8,        // 은행 - not sent by EGS_GET_MY_INVENTORY_REQ
+    kStEquipped = 9,    // 장착중인 장비 - not sent by EGS_GET_MY_INVENTORY_REQ
+    kStEquippedSkill = 10,
+    kStEquippedQuickSlot = 11,
+    kStPcBang = 12,
+    kStPet = 13,
+    kStShareBank = 14,
+    kStEquippedDefenceQuickSlot = 15,
+    kStEnd = 16,
+};
+
+// KInventory::GetFirstCategory() / GetSentinelCategory().
+inline constexpr int kFirstInventoryCategory = kStEquip;
+inline constexpr int kSentinelInventoryCategory = kStEnd;
+
 struct ItemInfo {
     enum ItemState : char {
         kIsInit = 0,

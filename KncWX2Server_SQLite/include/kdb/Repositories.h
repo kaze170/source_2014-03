@@ -36,6 +36,12 @@ struct AccountBlockInfoMirror {
     WideString blockEndDate;
 };
 
+// Keys of dbo.AccountOptions (AccountUID, OptKey, OptValue). The 2014 server kept the first two in
+// dbo.Account columns; the rewrite keeps them as options so the schema does not grow a column per
+// flag.
+inline constexpr const char* kOptIsRecommend = "IsRecommend";  // KAccountInfo.m_bIsRecommend
+inline constexpr const char* kOptShareBank = "ShareBank";      // P_GBankShare_SEL
+
 struct AccountRecord {
     UidType uid = 0;  // AccountUID (the 2014 code used a 64 bit UidType for accounts too)
     std::string loginId;

@@ -416,6 +416,8 @@ bool ChannelService::handleSelectUnit(AccountSession& state, LoginResponder& res
 
     state.unitUid = unit.unitUid;
     state.state = LoginState::kInChannel;
+    // KInventory::Clear() runs when the unit is loaded, and it resets the "already sent" set.
+    state.reportedInventoryCategories.clear();
     ack.ok = kNetOk;
     responder.send(EGS_SELECT_UNIT_ACK, encode(ack));
     KLOG(LogLevel::kInfo, "channel") << state.account.loginId << " selected unit '" << unit.nickName
@@ -432,14 +434,22 @@ bool ChannelService::handleInventory(AccountSession& state, LoginResponder& resp
         return true;
     }
 
-    GetMyInventoryAck ack;
-    ack.ok = kNetOk;
-    ack.isRecommend = false;
-    responder.send(EGS_GET_MY_INVENTORY_ACK, encode(ack));
+    // KInventory::GetSelectUnitInventoryInfo walks ST_EQUIP (1) up to ST_END (16) but skips the two
+    // categories that are not reachable from this packet - ST_BANK (8) and ST_E_EQUIP (9) - and
+    // emits nothing at all for an empty category. The notices therefore arrive in category order
+    // and only for bags that actually hold something.
+    for (int category = kFirstInventoryCategory; category < kSentinelInventoryCategory; ++category) {
+        if (category == kStBank || category == kStEquipped) continue;
 
-    for (int category = 1; category <= 5; ++category) {
+        // "인벤정보는 한번만 준다!" - GetInventoryInfo() marks the category as sent *before* it
+        // looks at the items, so a second request only answers with the ack. The mark is per
+        // category and lives until the unit is reloaded.
+        if (!state.reportedInventoryCategories.insert(category).second) continue;
+
         std::vector<db::ItemRecord> items;
         if (!repos_.inventory.listForUnit(state.unitUid, category, &items)) continue;
+        if (items.empty()) continue;
+
         SelectUnitInventoryInfoNot notice;
         notice.slotCategory = category;
         for (const auto& item : items) {
@@ -469,6 +479,18 @@ bool ChannelService::handleInventory(AccountSession& state, LoginResponder& resp
         }
         responder.send(EGS_SELECT_UNIT_INVENTORY_INFO_NOT, encode(notice));
     }
+
+    // The ack comes last: GSUserGameCommon.cpp:1158 sends every notice first and only then
+    // EGS_GET_MY_INVENTORY_ACK, so a client that waits for the ack to know the list is complete
+    // keeps working.
+    GetMyInventoryAck ack;
+    ack.ok = kNetOk;
+    // "추천인 등록 여부" (m_bIsRecommend of KAccountInfo) tells the client whether this account may
+    // still recommend somebody; it is spent when a character is created. The bank flag comes from
+    // P_GBankShare_SEL - whether the account has the shared bank unlock.
+    ack.isRecommend = repos_.accounts.getOption(state.account.uid, db::kOptIsRecommend) != 0;
+    ack.sharingBank = repos_.accounts.getOption(state.account.uid, db::kOptShareBank) != 0;
+    responder.send(EGS_GET_MY_INVENTORY_ACK, encode(ack));
     return true;
 }
 

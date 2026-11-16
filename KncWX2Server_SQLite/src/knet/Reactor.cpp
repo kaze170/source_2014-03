@@ -19,15 +19,19 @@ Reactor::~Reactor() = default;
 
 void Reactor::add(std::shared_ptr<Handler> handler) {
     if (!handler) return;
+    std::lock_guard<std::mutex> guard(handlerMutex_);
     pendingAdd_.push_back(std::move(handler));
 }
 
 void Reactor::remove(const std::shared_ptr<Handler>& handler) {
     if (!handler) return;
+    std::lock_guard<std::mutex> guard(handlerMutex_);
     handlers_.erase(std::remove(handlers_.begin(), handlers_.end(), handler), handlers_.end());
+    pendingAdd_.erase(std::remove(pendingAdd_.begin(), pendingAdd_.end(), handler), pendingAdd_.end());
 }
 
 void Reactor::removeHandle(SocketHandle handle) {
+    std::lock_guard<std::mutex> guard(handlerMutex_);
     handlers_.erase(std::remove_if(handlers_.begin(), handlers_.end(),
                                    [handle, this](const std::shared_ptr<Handler>& h) {
                                        if (h && h->handle() == handle) {
@@ -41,6 +45,7 @@ void Reactor::removeHandle(SocketHandle handle) {
 
 void Reactor::closeLater(std::shared_ptr<Handler> handler) {
     if (!handler) return;
+    std::lock_guard<std::mutex> guard(handlerMutex_);
     pendingClose_.push_back(std::move(handler));
 }
 
@@ -50,20 +55,29 @@ void Reactor::post(std::function<void()> fn) {
 }
 
 void Reactor::runPending() {
-    if (!pendingAdd_.empty()) {
-        for (auto& h : pendingAdd_) handlers_.push_back(std::move(h));
-        pendingAdd_.clear();
+    // Take a snapshot under the lock, then do the callbacks without it: onClose() reaches back into
+    // the listener, which may call add()/remove() and would deadlock on a non recursive lock.
+    std::vector<std::shared_ptr<Handler>> added;
+    std::vector<std::shared_ptr<Handler>> closing;
+    {
+        std::lock_guard<std::mutex> guard(handlerMutex_);
+        added.swap(pendingAdd_);
+        closing.swap(pendingClose_);
     }
-    if (!pendingClose_.empty()) {
-        for (auto& h : pendingClose_) {
-            const auto it = std::find(handlers_.begin(), handlers_.end(), h);
-            if (it != handlers_.end()) {
-                (*it)->onClose(*this);
-                handlers_.erase(it);
-            }
-        }
-        pendingClose_.clear();
+    if (!added.empty()) {
+        std::lock_guard<std::mutex> guard(handlerMutex_);
+        for (auto& h : added) handlers_.push_back(std::move(h));
     }
+    if (!closing.empty()) {
+        std::lock_guard<std::mutex> guard(handlerMutex_);
+        handlers_.erase(std::remove_if(handlers_.begin(), handlers_.end(),
+                                       [&closing](const std::shared_ptr<Handler>& h) {
+                                           return std::find(closing.begin(), closing.end(), h) !=
+                                                  closing.end();
+                                       }),
+                        handlers_.end());
+    }
+    for (auto& h : closing) h->onClose(*this);
     std::vector<std::function<void()>> jobs;
     {
         std::lock_guard<std::mutex> guard(postMutex_);
@@ -114,7 +128,14 @@ void Reactor::runOnce(int timeoutMs) {
     runTimers();
     ++iterations_;
 
-    if (handlers_.empty()) {
+    // Snapshot the handlers: callbacks add and remove them from other threads.
+    std::vector<std::shared_ptr<Handler>> snapshot;
+    {
+        std::lock_guard<std::mutex> guard(handlerMutex_);
+        snapshot = handlers_;
+    }
+
+    if (snapshot.empty()) {
         if (timeoutMs > 0) {
 #if defined(_WIN32)
             ::Sleep(static_cast<DWORD>(timeoutMs));
@@ -126,8 +147,8 @@ void Reactor::runOnce(int timeoutMs) {
     }
 
     std::vector<pollfd> fds;
-    fds.reserve(handlers_.size());
-    for (auto& h : handlers_) {
+    fds.reserve(snapshot.size());
+    for (auto& h : snapshot) {
         pollfd p{};
         p.fd = static_cast<decltype(p.fd)>(h->handle());
         p.events = POLLIN;
@@ -142,8 +163,6 @@ void Reactor::runOnce(int timeoutMs) {
 #endif
     if (ready <= 0) return;
 
-    // Copy the handler list: callbacks may add/remove handlers.
-    const std::vector<std::shared_ptr<Handler>> snapshot = handlers_;
     for (std::size_t i = 0; i < fds.size() && i < snapshot.size(); ++i) {
         const auto& handler = snapshot[i];
         if (!handler || handler->handle() != static_cast<SocketHandle>(fds[i].fd)) continue;

@@ -49,6 +49,43 @@ MigrationResult applySchema(Database& db) {
         result.appliedScripts.push_back(name);
     }
 
+    // A database created before the AccountOptions key was fixed still has AccountUID as the
+    // primary key, which silently allows only one option per account. CREATE TABLE IF NOT EXISTS
+    // will not touch it, so rebuild the table once, keeping the existing rows.
+    {
+        const Rows keys = db.query(
+            "SELECT COUNT(*) AS n FROM pragma_table_info('AccountOptions') WHERE pk > 0;", {});
+        const bool singleColumnKey = !keys.empty() && keys.front().at("n").asInt() == 1;
+        if (singleColumnKey) {
+            std::string error;
+            const bool ok = db.transaction([&] {
+                if (!db.exec("ALTER TABLE AccountOptions RENAME TO AccountOptions_old;", &error)) return false;
+                if (!db.exec(
+                        "CREATE TABLE AccountOptions ("
+                        "AccountUID INTEGER NOT NULL REFERENCES Accounts(AccountUID) ON DELETE CASCADE,"
+                        "OptKey TEXT NOT NULL,"
+                        "OptValue INTEGER NOT NULL DEFAULT 0,"
+                        "PRIMARY KEY (AccountUID, OptKey));",
+                        &error)) {
+                    return false;
+                }
+                if (!db.exec(
+                        "INSERT OR REPLACE INTO AccountOptions(AccountUID, OptKey, OptValue) "
+                        "SELECT AccountUID, OptKey, OptValue FROM AccountOptions_old;",
+                        &error)) {
+                    return false;
+                }
+                return db.exec("DROP TABLE AccountOptions_old;", &error);
+            });
+            if (!ok) {
+                result.error = "AccountOptions migration: " + error;
+                KLOG(LogLevel::kError, "db") << result.error;
+                return result;
+            }
+            result.appliedScripts.push_back("migrate:AccountOptions-key");
+        }
+    }
+
     if (result.fromVersion != kSchemaVersion) {
         std::string error;
         db.run("INSERT OR REPLACE INTO SchemaInfo(Version, AppliedAt, Description) VALUES(?,?,?);",

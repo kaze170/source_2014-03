@@ -61,7 +61,7 @@ int LoginService::errorFor(db::AuthOutcome outcome) {
     return kErrUnknown;
 }
 
-AccountInfo LoginService::toAccountInfo(const db::AccountRecord& account) {
+AccountInfo LoginService::toAccountInfo(const db::AccountRecord& account, bool isRecommend) {
     AccountInfo info;
     info.userUid = account.uid;
     info.id = toWide(account.loginId);
@@ -72,7 +72,7 @@ AccountInfo LoginService::toAccountInfo(const db::AccountRecord& account) {
     info.blockInfo.endTime = account.blockInfo.endTime;
     info.blockInfo.blockReason = account.blockInfo.blockReason;
     // The 2013 extra block fields (SERV_HACKING_USER_CHECK_COUNT) are not on the wire.
-    info.isRecommend = false;
+    info.isRecommend = isRecommend;
     info.isGuestUser = account.guestUser;
     info.regDate = timestampToWide(account.createdAt);
     info.lastLogin = timestampToWide(account.lastLoginAt);
@@ -161,7 +161,8 @@ bool LoginService::handleVerifyAccount(AccountSession& state, LoginResponder& re
         VerifyAccountAck ack;
         ack.ok = errorFor(outcome);
         if (outcome == db::AuthOutcome::kBlocked) {
-            ack.accountInfo = toAccountInfo(account);
+            ack.accountInfo = toAccountInfo(
+                account, repos_.accounts.getOption(account.uid, db::kOptIsRecommend) != 0);
         }
         responder.send(EGS_VERIFY_ACCOUNT_ACK, encode(ack));
         return false;
@@ -178,7 +179,8 @@ bool LoginService::handleVerifyAccount(AccountSession& state, LoginResponder& re
     repos_.accounts.recordLogin(account.uid, loginId, responder.peerIp(), request.machineId,
                                 config_.name, kNetOk);
 
-    AccountInfo info = toAccountInfo(account);
+    AccountInfo info =
+        toAccountInfo(account, repos_.accounts.getOption(account.uid, db::kOptIsRecommend) != 0);
 
     VerifyAccountAck ack;
     ack.ok = kNetOk;

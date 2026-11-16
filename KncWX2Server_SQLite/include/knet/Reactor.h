@@ -62,7 +62,10 @@ public:
     void post(std::function<void()> fn);
 
     const std::string& name() const { return name_; }
-    std::size_t handlerCount() const { return handlers_.size(); }
+    std::size_t handlerCount() const {
+        std::lock_guard<std::mutex> guard(handlerMutex_);
+        return handlers_.size();
+    }
 
     // Diagnostics.
     UINT64 iterations() const { return iterations_; }
@@ -82,6 +85,10 @@ private:
     std::string name_;
     bool running_ = false;
     UINT64 iterations_ = 0;
+    // add()/remove()/removeHandle() are called from other threads (a listener accepting a
+    // connection, a session closing), while the loop thread builds its poll set from handlers_.
+    // handlerMutex_ guards every access to these three containers.
+    mutable std::mutex handlerMutex_;
     std::vector<std::shared_ptr<Handler>> handlers_;
     std::vector<std::shared_ptr<Handler>> pendingAdd_;
     std::vector<std::shared_ptr<Handler>> pendingClose_;

@@ -101,7 +101,8 @@ public:
     bool handleNewUser(AccountSession& state, LoginResponder& responder, const SerBuffer& payload);
 
     // Converts a stored account row into the wire KAccountInfo the client receives.
-    static AccountInfo toAccountInfo(const db::AccountRecord& account);
+    // isRecommend comes from AccountOptions, which needs the repository, so the caller resolves it.
+    static AccountInfo toAccountInfo(const db::AccountRecord& account, bool isRecommend);
 
     // Maps a kdb auth outcome onto the wire error code.
     static int errorFor(db::AuthOutcome outcome);

@@ -484,7 +484,10 @@ KTEST(Channel, inventoryNeedsASelectedUnit) {
     KCHECK_EQ(responder.count(), std::size_t(1));  // no bag notices
 }
 
-KTEST(Channel, inventorySendsOneNoticePerBag) {
+// GSUserGameCommon.cpp:1158 sends every notice first and the ack last, so an empty inventory is a
+// single frame: the ack. An empty bag produces no notice at all (KInventory::
+// GetSelectUnitInventoryInfo skips it), which is why nothing else arrives here.
+KTEST(Channel, anEmptyInventoryIsJustTheAckAndItComesLast) {
     Fixture f;
     RecordingResponder responder;
     const UidType uid = f.createUnit(responder, "Elsword");
@@ -498,17 +501,13 @@ KTEST(Channel, inventorySendsOneNoticePerBag) {
     responder.clear();
     Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
     f.service->handle(f.session, responder, event);
-    KCHECK_EQ(responder.count(), std::size_t(6));  // ack + 5 bags
 
+    KCHECK_EQ(responder.count(), std::size_t(1));
+    KCHECK_EQ(responder.lastId(), EGS_GET_MY_INVENTORY_ACK);
     GetMyInventoryAck ack;
-    KCHECK(responder.at(0, ack));
+    KCHECK(responder.last(ack));
     KCHECK_EQ(ack.ok, static_cast<int>(kNetOk));
-    for (int category = 1; category <= 5; ++category) {
-        SelectUnitInventoryInfoNot notice;
-        KCHECK(responder.at(static_cast<std::size_t>(category), notice));
-        KCHECK_EQ(notice.slotCategory, category);
-        KCHECK_EQ(notice.items.size(), std::size_t(0));
-    }
+    KCHECK(!ack.isRecommend);
 }
 
 KTEST(Channel, storedItemsAreReportedInTheRightBag) {
@@ -530,15 +529,138 @@ KTEST(Channel, storedItemsAreReportedInTheRightBag) {
     Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
     f.service->handle(f.session, responder, event);
 
+    // One non-empty bag, then the ack: two frames, notice first.
+    KCHECK_EQ(responder.count(), std::size_t(2));
     SelectUnitInventoryInfoNot equipment;
-    KCHECK(responder.at(1, equipment));
-    KCHECK_EQ(equipment.slotCategory, 1);
+    KCHECK(responder.at(0, equipment));
+    KCHECK_EQ(responder.lastId(), EGS_GET_MY_INVENTORY_ACK);
+    KCHECK_EQ(equipment.slotCategory, kStEquip);
     KCHECK_EQ(equipment.items.size(), std::size_t(1));
     const InventoryItemInfo& wire = equipment.items.begin()->second;
     KCHECK_EQ(wire.itemUid, itemUid);
     KCHECK_EQ(wire.itemInfo.itemId, 100001);
     KCHECK_EQ(static_cast<int>(wire.slotId), 3);
     KCHECK_EQ(wire.itemInfo.quantity, 1);
+}
+
+// KInventory::GetSelectUnitInventoryInfo walks ST_EQUIP..ST_END but skips ST_BANK (8) and
+// ST_E_EQUIP (9): bank and worn equipment are not part of this packet.
+KTEST(Channel, theBankAndWornEquipmentBagsAreNotSent) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Eve");
+    KCHECK(uid > 0);
+    for (const int category : {kStBank, kStEquipped}) {
+        std::int64_t itemUid = 0;
+        KCHECK(f.repos().inventory.addItem(uid, 100001, category, 0, 1, &itemUid));
+    }
+
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+
+    // Nothing but the ack: both bags were skipped, not sent empty.
+    KCHECK_EQ(responder.count(), std::size_t(1));
+    KCHECK_EQ(responder.lastId(), EGS_GET_MY_INVENTORY_ACK);
+}
+
+// Only non-empty bags produce a notice, and they arrive in category order.
+KTEST(Channel, noticesFollowCategoryOrderAndSkipEmptyBags) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Chung");
+    KCHECK(uid > 0);
+    // Deliberately out of order, with gaps.
+    for (const int category : {kStQuest, kStEquip, kStMaterial}) {
+        std::int64_t itemUid = 0;
+        KCHECK(f.repos().inventory.addItem(uid, 100001, category, 0, 1, &itemUid));
+    }
+
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+
+    KCHECK_EQ(responder.count(), std::size_t(4));  // three bags + ack
+    const int expected[] = {kStEquip, kStMaterial, kStQuest};
+    for (std::size_t i = 0; i < 3; ++i) {
+        SelectUnitInventoryInfoNot notice;
+        KCHECK(responder.at(i, notice));
+        KCHECK_EQ(notice.slotCategory, expected[i]);
+        KCHECK_EQ(notice.items.size(), std::size_t(1));
+    }
+    KCHECK_EQ(responder.lastId(), EGS_GET_MY_INVENTORY_ACK);
+}
+
+// "인벤정보는 한번만 준다!" - a second request for the same unit answers with the ack only, and
+// selecting the unit again (KInventory::Clear) makes the bags available once more.
+KTEST(Channel, inventoryBagsAreHandedOutOnlyOncePerUnitLoad) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Ara");
+    KCHECK(uid > 0);
+    std::int64_t itemUid = 0;
+    KCHECK(f.repos().inventory.addItem(uid, 100001, kStEquip, 0, 1, &itemUid));
+
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+    KCHECK_EQ(responder.count(), std::size_t(2));  // bag + ack
+
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    KCHECK_EQ(responder.count(), std::size_t(1));  // ack only
+    KCHECK_EQ(responder.lastId(), EGS_GET_MY_INVENTORY_ACK);
+
+    // Re-selecting the unit reloads the inventory, so the bag is sent again.
+    f.service->handle(f.session, responder, selectEvent);
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    KCHECK_EQ(responder.count(), std::size_t(2));
+}
+
+// KAccountInfo.m_bIsRecommend travels to the client and KEGS_GET_MY_INVENTORY_ACK carries it again;
+// both read the account option, so a recommendable account looks the same on both screens.
+KTEST(Channel, theRecommendAndShareBankFlagsComeFromTheAccount) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Rose");
+    KCHECK(uid > 0);
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+    GetMyInventoryAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK(!ack.isRecommend);  // a fresh account has nothing stored
+    KCHECK(!ack.sharingBank);
+
+    KCHECK(f.repos().accounts.setOption(f.session.account.uid, db::kOptIsRecommend, 1));
+    KCHECK(f.repos().accounts.setOption(f.session.account.uid, db::kOptShareBank, 1));
+
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    KCHECK(responder.last(ack));
+    KCHECK(ack.isRecommend);
+    KCHECK(ack.sharingBank);
 }
 
 // --------------------------------------------------------------------------- access control

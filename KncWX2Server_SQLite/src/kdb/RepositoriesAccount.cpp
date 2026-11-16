@@ -126,8 +126,14 @@ bool AccountRepository::clearBlock(std::int64_t accountUid) {
 }
 
 bool AccountRepository::setOption(std::int64_t accountUid, const std::string& key, std::int64_t value) {
-    return db_.run("INSERT OR REPLACE INTO AccountOptions(AccountUID, OptKey, OptValue) VALUES(?,?,?);",
-                   {Value(accountUid), Value(key), Value(value)});
+    // The row references Accounts(AccountUID), so an unknown uid is a foreign key error. Surfacing
+    // it beats the silent failure this used to produce.
+    std::string error;
+    const bool ok = db_.run(
+        "INSERT OR REPLACE INTO AccountOptions(AccountUID, OptKey, OptValue) VALUES(?,?,?);",
+        {Value(accountUid), Value(key), Value(value)}, &error);
+    if (!ok) KLOG(LogLevel::kWarn, "db") << "setOption(" << accountUid << ", " << key << "): " << error;
+    return ok;
 }
 
 std::int64_t AccountRepository::getOption(std::int64_t accountUid, const std::string& key, std::int64_t def) {
