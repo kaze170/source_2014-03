@@ -228,7 +228,10 @@ public:
         config_.database.path = path_;
         config_.login.port = pickTcpPort();
         config_.channel.port = pickTcpPort();
-        config_.game.enabled = false;
+        // The game port is enabled so the routing tests can prove that a channel packet sent there
+        // is not silently answered by the login or channel service.
+        config_.game.port = pickTcpPort();
+        config_.game.enabled = true;
         const unsigned short channelPort = config_.channel.port;
         config_.channels.front().masterPort = channelPort;
         config_.channels.front().ncUdpPort = 9151;
@@ -263,6 +266,7 @@ public:
     Server& server() { return *server_; }
     unsigned short loginPort() const { return config_.login.port; }
     unsigned short channelPort() const { return config_.channel.port; }
+    unsigned short gamePort() const { return config_.game.port; }
 
 private:
     std::string path_;
@@ -551,6 +555,69 @@ KTEST(Server, endToEndLoginAndUnitFlow) {
     }
 
     channel.close();
+    fixture.stop();
+}
+
+// ServerSession::onEvent picks a service from the port role, *except* that the three login ids are
+// accepted from any port (the 2014 client repeated the handshake after being redirected). Those two
+// halves are what this pins: a login id must work on the game port, and a channel id must not.
+KTEST(Server, portRoleDecidesWhichServiceAnswers) {
+    KCHECK(net::startupSockets());
+    ServerFixture fixture;
+    KCHECK(fixture.start());
+
+    RawClient game;
+    KCHECK(game.connectTo(fixture.gamePort()));
+    KCHECK(game.handshake());
+    KCHECK_EQ(fixture.server().acceptedOn(PortRole::kGame), std::size_t(1));
+
+    Event event;
+
+    // 1. Before authenticating, a channel request on the game port reaches ChannelService, which
+    //    refuses it: the client must get no data rather than a half filled reply.
+    KCHECK(game.sendPacket(game.spi, EGS_GET_SERVER_SET_DATA_REQ, PacketOk{}));
+    KCHECK(game.expectSilence(400));
+
+    // 2. A login packet on the game port is routed to LoginService, exactly like the channel port.
+    ConnectReq connect;
+    connect.version = WideString(u"2014031300");
+    KCHECK(game.sendPacket(game.spi, EGS_CONNECT_REQ, connect));
+    KCHECK(game.receive(event));
+    KCHECK_EQ(event.eventId, EGS_CONNECT_ACK);
+    ConnectAck connectAck;
+    KCHECK(decodePayload(event.payload, connectAck));
+    KCHECK_EQ(connectAck.ok, static_cast<int>(kNetOk));
+
+    UserAuthenticateReq auth;
+    auth.userId = u"test";
+    auth.password = u"test";
+    KCHECK(game.sendPacket(game.spi, EGS_VERIFY_ACCOUNT_REQ, auth));
+    KCHECK(game.receive(event));
+    KCHECK_EQ(event.eventId, EGS_VERIFY_ACCOUNT_ACK);
+    VerifyAccountAck verifyAck;
+    KCHECK(decodePayload(event.payload, verifyAck));
+    KCHECK_EQ(verifyAck.ok, static_cast<int>(kNetOk));
+
+    // 3. Now that the same session is authenticated, the very same request is answered - one
+    //    process, one session, so the login handshake that just succeeded is what unlocks the
+    //    channel service on this port.
+    KCHECK(game.sendPacket(game.spi, EGS_GET_SERVER_SET_DATA_REQ, PacketOk{}));
+    KCHECK(game.receive(event));
+    KCHECK_EQ(event.eventId, EGS_GET_SERVER_SET_DATA_ACK);
+    GetServerSetDataAck setAck;
+    KCHECK(decodePayload(event.payload, setAck));
+    KCHECK_EQ(setAck.ok, static_cast<int>(kNetOk));
+    game.close();
+
+    // 4. The same request on the login port is refused: LoginService has no handler for it and only
+    //    logs, so the client sees nothing rather than a channel answer.
+    RawClient login;
+    KCHECK(login.connectTo(fixture.loginPort()));
+    KCHECK(login.handshake());
+    KCHECK(login.sendPacket(login.spi, EGS_GET_SERVER_SET_DATA_REQ, PacketOk{}));
+    KCHECK(login.expectSilence(400));
+    login.close();
+
     fixture.stop();
 }
 

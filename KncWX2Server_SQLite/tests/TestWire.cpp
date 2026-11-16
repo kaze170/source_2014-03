@@ -177,6 +177,50 @@ KTEST(EventId, knownValuesMatchClientEnumeration) {
     KCHECK_EQ(std::string(eventIdName(0xFFF0)), std::string("E_UNKNOWN"));
 }
 
+// The absolute numbers the wire actually carries for every message this server handles. The
+// relative assertions above catch "the generated block moved"; these catch "this particular id is
+// not the one the 2014 client knows". Each value is what tools/verify_eventids.py reads out of
+// Common/EventID_{System,Client,Server}.h by enumeration order.
+KTEST(EventId, idsUsedByTheServicesAreThe2014Numbers) {
+    // transport
+    KCHECK_EQ(E_HEART_BEAT, 0);
+    KCHECK_EQ(E_ACCEPT_CONNECTION_NOT, 1);
+    KCHECK_EQ(E_CONNECTION_LOST_NOT, 2);
+
+    // login port
+    KCHECK_EQ(EGS_CONNECT_REQ, 26);
+    KCHECK_EQ(EGS_CONNECT_ACK, 27);
+    KCHECK_EQ(EGS_NEW_USER_JOIN_REQ, 28);
+    KCHECK_EQ(EGS_NEW_USER_JOIN_ACK, 29);
+    KCHECK_EQ(EGS_VERIFY_ACCOUNT_REQ, 30);
+    KCHECK_EQ(EGS_VERIFY_ACCOUNT_ACK, 31);
+
+    // channel port: unit list / create / delete / select / inventory
+    KCHECK_EQ(EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_REQ, 34);
+    KCHECK_EQ(EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_ACK, 35);
+    KCHECK_EQ(EGS_CREATE_UNIT_REQ, 36);
+    KCHECK_EQ(EGS_CREATE_UNIT_ACK, 37);
+    KCHECK_EQ(EGS_DELETE_UNIT_REQ, 38);
+    KCHECK_EQ(EGS_DELETE_UNIT_ACK, 39);
+    KCHECK_EQ(EGS_SELECT_UNIT_REQ, 40);
+    KCHECK_EQ(EGS_SELECT_UNIT_ACK, 41);
+    KCHECK_EQ(EGS_GET_MY_INVENTORY_REQ, 47);
+    KCHECK_EQ(EGS_GET_MY_INVENTORY_ACK, 48);
+    KCHECK_EQ(EGS_SELECT_UNIT_INVENTORY_INFO_NOT, 49);
+
+    // channel port: server set + channel list. ECH_GET_CHANNEL_LIST_REQ is the *centre* variant the
+    // session layer also accepts, and it is deliberately not adjacent to the EGS pair.
+    KCHECK_EQ(EGS_GET_SERVER_SET_DATA_REQ, 52);
+    KCHECK_EQ(EGS_GET_SERVER_SET_DATA_ACK, 53);
+    KCHECK_EQ(EGS_SELECT_SERVER_SET_REQ, 54);
+    KCHECK_EQ(EGS_SELECT_SERVER_SET_ACK, 55);
+    KCHECK_EQ(EGS_CHECK_CHANNEL_CHANGE_REQ, 56);
+    KCHECK_EQ(EGS_CHECK_CHANNEL_CHANGE_ACK, 57);
+    KCHECK_EQ(ECH_GET_CHANNEL_LIST_REQ, 62);
+    KCHECK_EQ(EGS_GET_CHANNEL_LIST_REQ, 65);
+    KCHECK_EQ(EGS_GET_CHANNEL_LIST_ACK, 66);
+}
+
 // FeatureFlags.gen.h decides which fields every packet has. These assertions are the tripwire for
 // a regenerated flag table: if a flag that guards a wire field ever flips, this fails instead of the
 // bytes quietly moving. tools/verify_packets.py checks the same thing by construction.

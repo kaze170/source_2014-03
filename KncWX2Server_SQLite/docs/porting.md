@@ -98,6 +98,19 @@ comparison, so the guard rail cannot rot into a script that always prints "match
 `--sizes` prints the fixed byte count of each), which is the fastest way to answer "what does the 2014
 struct actually contain".
 
+### Checking the event ids
+
+A correctly encoded payload is useless if the event id in front of it is wrong - the client learns what
+a message *is* from the id alone. `tools/verify_eventids.py` rebuilds the id table from
+`EventID_System.h`, `EventID_Client.h` and `EventID_Server.h`, then re-evaluates `EventId.gen.h` by
+following its `X = Y + 1` chain (so a reordered or truncated generated block is caught, not trusted).
+It cross checks the 29 ids the rewrite spells by name, and asserts that each of the 12 REQ/ACK pairs
+the services answer is adjacent, which is how the 2014 headers are written.
+
+Current output: `2909 event id(s) verified against the 2014 headers (2909 total), 29 checked by name,
+12 REQ/ACK pairs adjacent`. `TestWire::EventId.idsUsedByTheServicesAreThe2014Numbers` pins the same
+absolute numbers inside the test suite, so a regenerated header fails a test even without the script.
+
 ## Known gaps
 
 * Rooms, dungeons, PvP matches, parties, guilds, the cash shop transaction path, the UDP relay
@@ -118,7 +131,7 @@ struct actually contain".
 ## Testing
 
 ```sh
-make test                                  # 98 tests, ~2 s
+make test                                  # 100 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -134,6 +147,11 @@ build/linux/bin/knc_tests --filter Db      # one suite
 | `Login` | every `LoginService` reply: version, capacity, unknown account, bad password, block details, id length, new user, state machine |
 | `Channel` | server set list/select, channel list, unit list, create/validate/daily limit, select, delete + name reservation, inventory bags, access control |
 | `Server` | ini parsing, and the same flow end to end over sockets on ephemeral ports with a temporary database |
+
+`Server` also covers port routing: a login id is accepted from *any* port (the 2014 client repeated
+the handshake after being redirected), a channel id is refused until the session has authenticated, and
+is answered afterwards - one process, one session, so the handshake that just succeeded is what
+unlocks the channel service on that port.
 
 `Login` and `Channel` need no sockets at all: `LoginService`/`ChannelService` take a
 `LoginResponder`, so a test drives packets straight into the service and decodes the replies.
