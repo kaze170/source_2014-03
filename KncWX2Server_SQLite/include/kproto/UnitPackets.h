@@ -27,13 +27,24 @@ namespace knc {
 static_assert(features::kSERV_PVP_NEW_SYSTEM, "KUnitInfo carries the 2011 PvP block");
 static_assert(features::kSERV_2012_PVP_SEASON2, "KUnitInfo carries rank/kFactor/pastSeasonWin");
 static_assert(features::kSERV_BATTLE_FIELD_SYSTEM, "KUnitInfo carries KLastPositionInfo");
+static_assert(features::kSERV_BATTLE_FIELD_BOSS, "KLastPositionInfo and KItemInfo carry their boss fields");
 static_assert(features::kSERV_TITLE_DATA_SIZE, "m_iTitleID is an int, not a short");
 static_assert(features::kGUILD_TEST, "KUnitInfo carries KUserGuildInfo");
+static_assert(features::kSERV_PC_BANG_TYPE, "KUnitInfo carries m_iPcBangType");
+static_assert(features::kSERV_REFORM_THE_GATE_OF_DARKNESS, "KUnitInfo carries m_vecBuffInfo");
+static_assert(features::kSERV_LIMITED_DUNGEON_PLAY_TIMES, "KUnitInfo carries m_mapDungeonPlay");
+static_assert(features::kSERV_ADD_WARP_BUTTON, "KUnitInfo carries m_trWarpVipEndData");
+static_assert(features::kSERV_GROW_UP_SOCKET, "KUnitInfo carries the event quest counters");
 static_assert(!features::kSERV_UNIT_WAIT_DELETE, "the deleted-unit block is off in this build");
 static_assert(features::kSERV_NEW_ITEM_SYSTEM_2013_05, "KItemInfo carries the 2013 item state");
 static_assert(features::kSERV_ITEM_OPTION_DATA_SIZE, "KItemInfo sockets are int, not short");
 static_assert(features::kSERV_EXPAND_SLOT_ID_DATA_SIZE, "KInventoryItemInfo slot is a short");
 static_assert(features::kSERV_SKILL_PAGE_SYSTEM, "KUnitSkillData carries the page counters");
+static_assert(features::kGUILD_SKILL_TEST, "KUnitSkillData carries the guild passive skills");
+static_assert(features::kSERV_SKILL_NOTE, "KUnitSkillData carries the skill note list");
+static_assert(features::kSERV_CODE_EVENT, "EGS_SELECT_UNIT_REQ carries m_setCodeEventScriptID");
+static_assert(!features::kSERV_GLOBAL_EVENT_TABLE, "EGS_SELECT_UNIT_REQ carries no global event map");
+static_assert(!features::kSERV_GOLD_TICKET, "KItemInfo carries no m_iGoldTicketKeyUID");
 
 // --------------------------------------------------------------------------- KStat
 // DECL_DATA( KStat ) - the five integers KUnitInfo carries twice (base and game stat).
@@ -97,14 +108,100 @@ struct TCClearInfo {
     }
 };
 
+// --------------------------------------------------------------------------- KDungeonPlayInfo
+// DECL_DATA( KDungeonPlayInfo ), SERV_LIMITED_DUNGEON_PLAY_TIMES.
+struct DungeonPlayInfo {
+    int dungeonId = 0;
+    int playTimes = 0;
+    int clearTimes = 0;
+    bool isNew = false;
+
+    void serialize(Serializer& s) {
+        s.io(dungeonId);
+        s.io(playTimes);
+        s.io(clearTimes);
+        s.io(isNew);
+    }
+};
+
+// --------------------------------------------------------------------------- buffs
+// DECL_DATA( KBuffBehaviorFactor / KBuffFinalizerFactor ) share a shape:
+// { UINT type; std::vector<float> values; }
+struct BuffBehaviorFactor {
+    unsigned int type = 0;
+    std::vector<float> values;
+
+    void serialize(Serializer& s) {
+        s.io(type);
+        s.io(values);
+    }
+};
+
+struct BuffFinalizerFactor {
+    unsigned int type = 0;
+    std::vector<float> values;
+
+    void serialize(Serializer& s) {
+        s.io(type);
+        s.io(values);
+    }
+};
+
+// DECL_DATA( KBuffIdentity ) { int templateId; UINT uniqueNum; }
+struct BuffIdentity {
+    int templateId = 0;
+    unsigned int uniqueNum = 0;
+
+    void serialize(Serializer& s) {
+        s.io(templateId);
+        s.io(uniqueNum);
+    }
+};
+
+// DECL_DATA( KBuffFactor ). Note the PUT order: the identity, the accumulation pair and the factor
+// id go out, but m_uidMesGameUnit and m_bIsMesGameUnitNpc are deliberately absent from the 2014
+// serializer, so they must not appear here either.
+struct BuffFactor {
+    std::vector<BuffBehaviorFactor> behaviorFactors;
+    std::vector<BuffFinalizerFactor> finalizerFactors;
+    BuffIdentity identity;
+    float accumulationMultiplier = 0.0f;
+    unsigned char accumulationCountNow = 0;
+    int factorId = 0;
+
+    void serialize(Serializer& s) {
+        s.io(behaviorFactors);
+        s.io(finalizerFactors);
+        s.io(identity);
+        s.io(accumulationMultiplier);
+        s.io(accumulationCountNow);
+        s.io(factorId);
+    }
+};
+
+// DECL_DATA( KBuffInfo ) { KBuffFactor factorInfo; __int64 startTime; __int64 endTime; }
+struct BuffInfo {
+    BuffFactor factorInfo;
+    std::int64_t buffStartTime = 0;
+    std::int64_t buffEndTime = 0;
+
+    void serialize(Serializer& s) {
+        s.io(factorInfo);
+        s.io(buffStartTime);
+        s.io(buffEndTime);
+    }
+};
+
 // --------------------------------------------------------------------------- KItemInfo
 // The 2013-05 item rework is enabled in this build, so the state and random socket fields exist.
 struct ItemAttributeEnchantInfo {
-    char attribEnchant[3] = {0, 0, 0};
+    char attribEnchant0 = 0;
+    char attribEnchant1 = 0;
+    char attribEnchant2 = 0;
     void serialize(Serializer& s) {
-        s.io(attribEnchant[0]);
-        s.io(attribEnchant[1]);
-        s.io(attribEnchant[2]);
+        s.io(attribEnchant0);
+        s.io(attribEnchant1);
+        s.io(attribEnchant2);
     }
 };
 
@@ -127,7 +224,7 @@ struct ItemInfo {
     char itemState = kIsInit;           // SERV_NEW_ITEM_SYSTEM_2013_05
     short period = 0;
     WideString expirationDate;
-    byte expandedSocketNum = 0;         // SERV_BATTLE_FIELD_BOSS
+    byte expandedSocketNum = 0;         // SERV_BATTLE_FIELD_BOSS (on in this build)
 
     void serialize(Serializer& s) {
         s.io(itemId);
@@ -184,8 +281,10 @@ struct UnitSkillData {
     unsigned char skillPagesAvailable = 1;
 
     void serialize(Serializer& s) {
-        for (int i = 0; i < kEquippedSkillSlotCount; ++i) s.io(equippedSkill[i]);
-        for (int i = 0; i < kEquippedSkillSlotCount; ++i) s.io(equippedSkillSlotB[i]);
+        // The 2014 serializer wrote the eight slots one by one (PUT(m_aEquippedSkill[0]) ... [3]).
+        // A fixed size array goes out unframed - no count - exactly like those eight PUTs.
+        s.io(equippedSkill);
+        s.io(equippedSkillSlotB);
         s.io(skillSlotBEndDate);
         s.io(skillSlotBExpirationState);
         s.io(passiveSkill);
@@ -254,11 +353,14 @@ struct UnitInfo {
 
     LastPositionInfo lastPos;  // SERV_BATTLE_FIELD_SYSTEM
 
+    std::vector<BuffInfo> buffInfo;  // SERV_REFORM_THE_GATE_OF_DARKNESS
+
     int win = 0;
     int lose = 0;
 
     std::map<int, DungeonClearInfo> dungeonClear;
     std::map<int, TCClearInfo> tcClear;
+    std::map<int, DungeonPlayInfo> dungeonPlay;  // SERV_LIMITED_DUNGEON_PLAY_TIMES
     std::map<int, InventoryItemInfo> equippedItem;
 
     UnitSkillData unitSkillData;
@@ -267,11 +369,16 @@ struct UnitInfo {
     int spiritMax = 0;
     int spirit = 0;
     bool isGameBang = false;
+    int pcBangType = 0;  // SERV_PC_BANG_TYPE
 
     int titleId = 0;  // SERV_TITLE_DATA_SIZE (int, not short)
     UserGuildInfo guildInfo;  // GUILD_TEST
 
     WideString lastLoginTime;
+
+    std::int64_t warpVipEndDate = 0;  // SERV_ADD_WARP_BUTTON
+    int eventQuestClearCount = 0;     // SERV_GROW_UP_SOCKET
+    int exchangeCount = 0;
 
     void serialize(Serializer& s) {
         s.io(ownerUserUid);
@@ -305,19 +412,25 @@ struct UnitInfo {
         s.io(stat);
         s.io(gameStat);
         s.io(lastPos);
+        s.io(buffInfo);
         s.io(win);
         s.io(lose);
         s.io(dungeonClear);
         s.io(tcClear);
+        s.io(dungeonPlay);
         s.io(equippedItem);
         s.io(unitSkillData);
         s.io(isParty);
         s.io(spiritMax);
         s.io(spirit);
         s.io(isGameBang);
+        s.io(pcBangType);
         s.io(titleId);
         s.io(guildInfo);
         s.io(lastLoginTime);
+        s.io(warpVipEndDate);
+        s.io(eventQuestClearCount);
+        s.io(exchangeCount);
     }
 };
 
@@ -327,12 +440,13 @@ struct MyUnitAndInventoryInfoListAck {
     int ok = 0;
     int unitSlot = 0;
     std::vector<UnitInfo> unitInfo;
-    bool sharingBank = false;  // SERV_SHARING_BANK_QUEST_CASH is off in this build's flag set
+    bool sharingBank = false;  // SERV_SHARING_BANK_QUEST_CASH (on in this build)
 
     void serialize(Serializer& s) {
         s.io(ok);
         s.io(unitSlot);
         s.io(unitInfo);
+        s.io(sharingBank);
     }
 };
 
@@ -355,10 +469,12 @@ struct CreateUnitAck {
 struct GetMyInventoryAck {
     int ok = 0;
     bool isRecommend = false;
+    bool sharingBank = false;  // SERV_SHARING_BANK_QUEST_CASH (on in this build)
 
     void serialize(Serializer& s) {
         s.io(ok);
         s.io(isRecommend);
+        s.io(sharingBank);
     }
 };
 
@@ -376,7 +492,13 @@ struct SelectUnitInventoryInfoNot {
 // EGS_SELECT_UNIT_REQ / ACK
 struct SelectUnitReq {
     UidType unitUid = 0;
-    void serialize(Serializer& s) { s.io(unitUid); }
+    std::set<int> codeEventScriptId;  // SERV_CODE_EVENT
+    // SERV_GLOBAL_EVENT_TABLE is disabled, so m_mapGlobalEventData is absent.
+
+    void serialize(Serializer& s) {
+        s.io(unitUid);
+        s.io(codeEventScriptId);
+    }
 };
 
 struct SelectUnitAck {

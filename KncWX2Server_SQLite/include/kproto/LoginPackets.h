@@ -2,8 +2,9 @@
 //
 // Every struct here mirrors a DECL_DATA / DECL_PACKET in KncWX2Server/Common/{CommonPacket.h,
 // ClientPacket.h} and its SERIALIZE_DEFINE_PUT order. The feature-flag #ifdef blocks are resolved
-// with the single fixed flag set in include/kproto/FeatureFlags.gen.h (568 enabled / 133 disabled),
-// which is the same set the rest of the rewrite is built with.
+// with the single fixed flag set in include/kproto/FeatureFlags.gen.h (691 enabled, 185 disabled and
+// 61 tested-but-never-defined, region NONE), which is the same set the rest of the rewrite is built
+// with.
 #pragma once
 
 #include <cstdint>
@@ -13,9 +14,30 @@
 
 #include "kcore/Serialize.h"
 #include "kcore/Types.h"
+#include "kproto/FeatureFlags.gen.h"
 #include "kproto/Packet.h"
 
 namespace knc {
+
+// The same guard as in UnitPackets.h: this file spells out the flag-resolved layout, so the few
+// flags that decide which *login* fields exist are asserted rather than trusted.
+static_assert(features::kSERV_OTP_AUTH, "KUserAuthenticateReq carries m_wstrHWID");
+static_assert(features::kSERV_MACHINE_ID_DUPLICATE_CHECK, "KUserAuthenticateReq carries m_strMachineID");
+static_assert(!features::kSERV_DLL_LIST_CHECK_BEFOR_LOADING,
+              "KUserAuthenticateReq does not carry m_kChannelRandomKey");
+static_assert(!features::kSERV_SERIAL_NUMBER_AVAILABILITY_CHECK_IN_GAMESERVER,
+              "KUserAuthenticateReq does not carry m_charServerSN");
+static_assert(features::kSERV_KOG_OTP_VERIFY, "KUserAuthenticateReq carries m_bManualLogin");
+static_assert(!features::kSERV_EVENT_MONEY, "EGS_VERIFY_ACCOUNT_ACK does not carry m_iEventMoney");
+static_assert(!features::kSERV_HACKING_USER_CHECK_COUNT,
+              "KAccountBlockInfo carries only the end time and the reason");
+static_assert(!features::kSERV_INTEGRATE_THE_CHANNEL_INFO, "KChannelInfo carries no m_kBonusInfo");
+static_assert(features::kSERV_CHAR_LOG, "EGS_DELETE_UNIT_ACK carries the nick name, level and class");
+static_assert(features::kSERV_UNIT_DELETE_EXCEPTION_MODIFY, "EGS_DELETE_UNIT_REQ carries m_iUserUID");
+static_assert(features::kSERV_CLIENT_PUBLIC_IP, "EGS_VERIFY_ACCOUNT_ACK carries m_wstrClientIP");
+static_assert(features::kSERV_SHARING_BANK_QUEST_CASH, "the unit list and inventory acks carry sharingBank");
+static_assert(!features::kSERV_STEAM, "KUserAuthenticateReq carries no m_bSteamClient");
+static_assert(!features::kSERV_CHANNELING_AERIA, "KUserAuthenticateReq carries no m_bAeriaClient");
 
 // --------------------------------------------------------------------------- KAccountOption
 // DECL_DATA( KAccountOption ) { bool m_bPlayGuide; }
@@ -41,7 +63,8 @@ struct AccountInfo {
     WideString otp;
     WideString regDate;       // SERV_CASH_ITEM_LIST
     WideString lastLogin;     // SERV_SECOND_SECURITY
-    int channelRandomKey = 0; // SERV_DLL_LIST_CHECK_BEFOR_LOADING
+    // SERV_DLL_LIST_CHECK_BEFOR_LOADING is #undef'd in the OnlyGlobal defines, so
+    // m_iChannelRandomKey is NOT on the wire.
 
     void serialize(Serializer& s) {
         s.io(userUid);
@@ -56,7 +79,6 @@ struct AccountInfo {
         s.io(otp);
         s.io(regDate);
         s.io(lastLogin);
-        s.io(channelRandomKey);
     }
 };
 
@@ -68,18 +90,15 @@ struct UserAuthenticateReq {
     WideString password;
     WideString hwid;                 // SERV_OTP_AUTH
     std::string machineId;           // SERV_MACHINE_ID_DUPLICATE_CHECK
-    int channelRandomKey = 0;        // SERV_DLL_LIST_CHECK_BEFOR_LOADING
-    std::vector<byte> charServerSn;  // SERV_SERIAL_NUMBER_AVAILABILITY_CHECK_IN_GAMESERVER, SERVER_SN bytes
-    WideString clientTime;           // SERV_CHECK_MACHINE_LOCALTIME
     int channelingCode = 0;
     bool manualLogin = false;        // SERV_KOG_OTP_VERIFY
-    WideString socketId;             // SERV_COUNTRY_TH
-    bool steamClient = false;        // SERV_STEAM
-    bool aeriaClient = false;        // SERV_CHANNELING_AERIA
-
-    UserAuthenticateReq() : charServerSn(kServerSn, 0) {}
-
-    static constexpr std::size_t kServerSn = 8;
+    // Absent from this build's flag set, so absent from the wire too:
+    //   m_kChannelRandomKey (SERV_DLL_LIST_CHECK_BEFOR_LOADING disabled)
+    //   m_charServerSN[12]  (SERV_SERIAL_NUMBER_AVAILABILITY_CHECK_IN_GAMESERVER disabled)
+    //   m_wstrClientTime    (SERV_CHECK_MACHINE_LOCALTIME commented out)
+    //   m_wstrSocketID      (SERV_COUNTRY_TH disabled, region block inert)
+    //   m_bSteamClient / m_bAeriaClient (not defined by ServerDefine.h at all)
+    static constexpr std::size_t kFixedSize = 1 + 4 + 1;  // debugAuth + channelingCode + manualLogin
 
     void serialize(Serializer& s) {
         s.io(debugAuth);
@@ -87,14 +106,8 @@ struct UserAuthenticateReq {
         s.io(password);
         s.io(hwid);
         s.io(machineId);
-        s.io(channelRandomKey);
-        s.io(charServerSn);
-        s.io(clientTime);
         s.io(channelingCode);
         s.io(manualLogin);
-        s.io(socketId);
-        s.io(steamClient);
-        s.io(aeriaClient);
     }
 };
 
@@ -108,12 +121,11 @@ struct ConnectAck {
     int ok = 0;
     int udpPort = 0;
     int channelId = 0;
-    bool udpKickOff = false;  // UDP_CAN_NOT_SEND_USER_KICK
+    // UDP_CAN_NOT_SEND_USER_KICK is not defined, so m_bUDPKickOff is not on the wire.
     void serialize(Serializer& s) {
         s.io(ok);
         s.io(udpPort);
         s.io(channelId);
-        s.io(udpKickOff);
     }
 };
 
@@ -129,7 +141,7 @@ struct VerifyAccountAck {
     WideString clientIp;      // SERV_CLIENT_PUBLIC_IP
     std::uint8_t channelCode = 0;
     WideString channelUserId;
-    int eventMoney = 0;       // SERV_EVENT_MONEY
+    // SERV_EVENT_MONEY is disabled, so m_iEventMoney is absent from the wire.
 
     void serialize(Serializer& s) {
         s.io(ok);
@@ -142,7 +154,6 @@ struct VerifyAccountAck {
         s.io(clientIp);
         s.io(channelCode);
         s.io(channelUserId);
-        s.io(eventMoney);
     }
 };
 
@@ -219,12 +230,20 @@ struct SelectServerSetAck {
 };
 
 // --------------------------------------------------------------------------- channel list
+// DECL_DATA( KChannelBonusInfo ): the level range that gets the bonus, not just the percentages.
 struct ChannelBonusInfo {
-    int expBonus = 0;
-    int dropBonus = 0;
+    bool enable = false;
+    int beginLevel = 0;
+    int endLevel = 0;
+    int perExp = 0;
+    int perEd = 0;
+
     void serialize(Serializer& s) {
-        s.io(expBonus);
-        s.io(dropBonus);
+        s.io(enable);
+        s.io(beginLevel);
+        s.io(endLevel);
+        s.io(perExp);
+        s.io(perEd);
     }
 };
 
@@ -241,7 +260,8 @@ struct ChannelInfo {
     int currentUser = 0;
     int curPartyCount = 0;
     int playGamePartyCount = 0;
-    ChannelBonusInfo bonusInfo;  // SERV_INTEGRATE_THE_CHANNEL_INFO
+    // SERV_INTEGRATE_THE_CHANNEL_INFO is not defined, so m_kBonusInfo is not on the wire.
+    // (The bonus table still travels in EGS_GET_CHANNEL_LIST_ACK's map, keyed by channel id.)
 
     void serialize(Serializer& s) {
         s.io(serverUid);
@@ -255,7 +275,6 @@ struct ChannelInfo {
         s.io(currentUser);
         s.io(curPartyCount);
         s.io(playGamePartyCount);
-        s.io(bonusInfo);
     }
 };
 
@@ -313,21 +332,20 @@ struct DeleteUnitAck {
     int ok = 0;
     UidType unitUid = 0;
     UINT32 knmSerialNum = 0;
+    int guildUid = 0;     // GUILD_TEST
     WideString nickName;  // SERV_CHAR_LOG
-    UCHAR level = 0;
-    char unitClass = 0;
-    std::int64_t reDeleteAbleDate = 0;  // SERV_UNIT_WAIT_DELETE
-    std::int64_t deleteAbleDate = 0;
+    UCHAR level = 0;      // SERV_CHAR_LOG
+    char unitClass = 0;   // SERV_CHAR_LOG
+    // SERV_UNIT_WAIT_DELETE is disabled, so m_tReDelAbleDate / m_tDelAbleDate are absent.
 
     void serialize(Serializer& s) {
         s.io(ok);
         s.io(unitUid);
         s.io(knmSerialNum);
+        s.io(guildUid);
         s.io(nickName);
         s.io(level);
         s.io(unitClass);
-        s.io(reDeleteAbleDate);
-        s.io(deleteAbleDate);
     }
 };
 

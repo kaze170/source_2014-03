@@ -16,3 +16,6 @@ data/
 *.swp
 *.user
 .vs/
+
+# Python bytecode from tools/*.py
+__pycache__/

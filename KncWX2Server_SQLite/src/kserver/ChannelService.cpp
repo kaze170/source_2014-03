@@ -107,6 +107,25 @@ UnitInfo ChannelService::toUnitInfo(const db::UnitRecord& unit) const {
     info.lastPos.lastTouchLineIndex = 0;
     info.lastPos.lastPosValue = 0;
     info.lastLoginTime = toWide(unit.lastTown);
+
+    // GUILD_TEST is on in this build, so the guild block is always on the wire. A character
+    // without a guild sends the zeroed block the 2014 server sent (uid 0, empty name).
+    db::GuildRecord guild;
+    if (repos_.social.loadGuildOf(unit.unitUid, &guild)) {
+        info.guildInfo.guildUid = static_cast<int>(guild.guildUid);
+        info.guildInfo.guildName = toWide(guild.name);
+    }
+    return info;
+}
+
+ChannelBonusInfo ChannelService::bonusInfoFor(const ChannelConfig& channel) {
+    ChannelBonusInfo info;
+    info.enable = channel.bonusExpPercent > 0 || channel.bonusDropPercent > 0;
+    // The 2014 table applied a bonus to a level range; a whole-channel event covers every level.
+    info.beginLevel = 1;
+    info.endLevel = 99;
+    info.perExp = channel.bonusExpPercent;
+    info.perEd = channel.bonusDropPercent;
     return info;
 }
 
@@ -123,8 +142,7 @@ ChannelInfo ChannelService::toChannelInfo(const ChannelConfig& channel) const {
     info.currentUser = 0;
     info.curPartyCount = 0;
     info.playGamePartyCount = 0;
-    info.bonusInfo.expBonus = channel.bonusExpPercent;
-    info.bonusInfo.dropBonus = channel.bonusDropPercent;
+
     return info;
 }
 
@@ -174,9 +192,6 @@ bool ChannelService::handleSelectServerSet(AccountSession& state, LoginResponder
         // The 2014 client showed the block reason on this screen when the account was punished.
         ack.accountBlockInfo.endTime = state.account.blockInfo.endTime;
         ack.accountBlockInfo.blockReason = state.account.blockInfo.blockReason;
-        ack.accountBlockInfo.blockType = state.account.blockInfo.blockType;
-        ack.accountBlockInfo.blockReason2 = state.account.blockInfo.blockReason2;
-        ack.accountBlockInfo.blockEndDate = state.account.blockInfo.blockEndDate;
     }
     responder.send(EGS_SELECT_SERVER_SET_ACK, encode(ack));
     return true;
@@ -191,7 +206,9 @@ bool ChannelService::handleChannelList(AccountSession& state, LoginResponder& re
                             : state.serverSetId;
     for (const auto& channel : config_.channels) {
         ack.channelInfo.push_back(toChannelInfo(channel));
-        ack.channelBonusInfo[channel.channelId] = ack.channelInfo.back().bonusInfo;
+        // KChannelInfo itself does not carry the bonus (SERV_INTEGRATE_THE_CHANNEL_INFO is off);
+        // the per-channel table travels in the map instead.
+        ack.channelBonusInfo[channel.channelId] = bonusInfoFor(channel);
     }
     responder.send(EGS_GET_CHANNEL_LIST_ACK, encode(ack));
     return true;
@@ -335,6 +352,10 @@ bool ChannelService::handleDeleteUnit(AccountSession& state, LoginResponder& res
 
     ack.unitUid = unit.unitUid;
     ack.knmSerialNum = static_cast<UINT32>(unit.knmSerial);
+    db::GuildRecord guild;
+    if (repos_.social.loadGuildOf(unit.unitUid, &guild)) {
+        ack.guildUid = static_cast<int>(guild.guildUid);
+    }
     ack.nickName = toWide(unit.nickName);
     ack.level = static_cast<UCHAR>(std::clamp(unit.level, 0, 255));
     ack.unitClass = static_cast<char>(unit.unitClass);
@@ -415,9 +436,11 @@ bool ChannelService::handleInventory(AccountSession& state, LoginResponder& resp
             wire.itemInfo.endurance = static_cast<short>(item.endurance);
             wire.itemInfo.enchantLevel = static_cast<char>(item.enchantLevel);
             for (const auto& attribute : item.attributes) {
+                char* slots[3] = {&wire.itemInfo.attribEnchantInfo.attribEnchant0,
+                                  &wire.itemInfo.attribEnchantInfo.attribEnchant1,
+                                  &wire.itemInfo.attribEnchantInfo.attribEnchant2};
                 if (attribute.index >= 0 && attribute.index < 3) {
-                    wire.itemInfo.attribEnchantInfo.attribEnchant[attribute.index] =
-                        static_cast<char>(attribute.type);
+                    *slots[attribute.index] = static_cast<char>(attribute.type);
                 }
             }
             for (const auto& socket : item.sockets) {

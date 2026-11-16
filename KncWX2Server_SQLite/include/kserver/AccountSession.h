@@ -28,7 +28,6 @@ struct AccountSession {
     UidType unitUid = 0;
     int channelId = 0;
     int serverSetId = 0;
-    int channelRandomKey = 0;
     std::string machineId;
     std::string clientIp;
     std::int64_t connectedAt = 0;
@@ -40,7 +39,6 @@ struct AccountSession {
         unitUid = 0;
         channelId = 0;
         serverSetId = 0;
-        channelRandomKey = 0;
         machineId.clear();
     }
 };

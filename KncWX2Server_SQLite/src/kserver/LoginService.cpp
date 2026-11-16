@@ -71,14 +71,11 @@ AccountInfo LoginService::toAccountInfo(const db::AccountRecord& account) {
     info.option.playGuide = false;
     info.blockInfo.endTime = account.blockInfo.endTime;
     info.blockInfo.blockReason = account.blockInfo.blockReason;
-    info.blockInfo.blockType = account.blockInfo.blockType;
-    info.blockInfo.blockReason2 = account.blockInfo.blockReason2;
-    info.blockInfo.blockEndDate = account.blockInfo.blockEndDate;
+    // The 2013 extra block fields (SERV_HACKING_USER_CHECK_COUNT) are not on the wire.
     info.isRecommend = false;
     info.isGuestUser = account.guestUser;
     info.regDate = timestampToWide(account.createdAt);
     info.lastLogin = timestampToWide(account.lastLoginAt);
-    info.channelRandomKey = 0;
     return info;
 }
 
@@ -173,7 +170,6 @@ bool LoginService::handleVerifyAccount(AccountSession& state, LoginResponder& re
     state.account = account;
     state.authenticated = true;
     state.state = LoginState::kAuthenticated;
-    state.channelRandomKey = request.channelRandomKey;
     state.machineId = request.machineId;
     state.clientIp = responder.peerIp();
     state.connectedAt = nowMs();
@@ -183,7 +179,6 @@ bool LoginService::handleVerifyAccount(AccountSession& state, LoginResponder& re
                                 config_.name, kNetOk);
 
     AccountInfo info = toAccountInfo(account);
-    info.channelRandomKey = request.channelRandomKey;
 
     VerifyAccountAck ack;
     ack.ok = kNetOk;

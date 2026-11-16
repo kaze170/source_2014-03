@@ -9,6 +9,7 @@
 #include "kcore/Text.h"
 #include "kproto/Event.h"
 #include "kproto/EventId.h"
+#include "kproto/FeatureFlags.gen.h"
 #include "ksec/Des.h"
 #include "ksec/Md5.h"
 #include "ksec/SecureBuffer.h"
@@ -174,6 +175,52 @@ KTEST(EventId, knownValuesMatchClientEnumeration) {
     KCHECK_EQ(std::string(eventIdName(EGS_CONNECT_ACK)), std::string("EGS_CONNECT_ACK"));
     KCHECK_EQ(std::string(eventIdName(0)), std::string("E_HEART_BEAT"));
     KCHECK_EQ(std::string(eventIdName(0xFFF0)), std::string("E_UNKNOWN"));
+}
+
+// FeatureFlags.gen.h decides which fields every packet has. These assertions are the tripwire for
+// a regenerated flag table: if a flag that guards a wire field ever flips, this fails instead of the
+// bytes quietly moving. tools/verify_packets.py checks the same thing by construction.
+KTEST(PacketFlags, wireDecidingFlagsAreTheExpectedValues) {
+    using namespace knc::features;
+    KCHECK(kSERV_OTP_AUTH);
+    KCHECK(kSERV_MACHINE_ID_DUPLICATE_CHECK);
+    KCHECK(kSERV_KOG_OTP_VERIFY);
+    KCHECK(kSERV_CLIENT_PUBLIC_IP);
+    KCHECK(kSERV_CHAR_LOG);
+    KCHECK(kSERV_UNIT_DELETE_EXCEPTION_MODIFY);
+    KCHECK(kGUILD_TEST);
+    KCHECK(kSERV_CODE_EVENT);
+    KCHECK(kSERV_SHARING_BANK_QUEST_CASH);
+    KCHECK(kSERV_NEW_ITEM_SYSTEM_2013_05);
+    KCHECK(kSERV_BATTLE_FIELD_BOSS);
+    KCHECK(kSERV_TITLE_DATA_SIZE);
+    KCHECK(kSERV_LIMITED_DUNGEON_PLAY_TIMES);
+    KCHECK(kSERV_ADD_WARP_BUTTON);
+    KCHECK(kSERV_GROW_UP_SOCKET);
+    KCHECK(kSERV_PC_BANG_TYPE);
+    KCHECK(kSERV_REFORM_THE_GATE_OF_DARKNESS);
+    KCHECK(kSERV_ITEM_OPTION_DATA_SIZE);
+    KCHECK(kSERV_EXPAND_SLOT_ID_DATA_SIZE);
+    KCHECK(kSERV_SKILL_PAGE_SYSTEM);
+    KCHECK(kGUILD_SKILL_TEST);
+    KCHECK(kSERV_SKILL_NOTE);
+
+    // ... and the ones this build leaves out. Every one of them removes bytes from a packet.
+    KCHECK(!kSERV_UNIT_WAIT_DELETE);
+    KCHECK(!kSERV_DLL_LIST_CHECK_BEFOR_LOADING);
+    KCHECK(!kSERV_SERIAL_NUMBER_AVAILABILITY_CHECK_IN_GAMESERVER);
+    KCHECK(!kSERV_EVENT_MONEY);
+    KCHECK(!kSERV_HACKING_USER_CHECK_COUNT);
+    KCHECK(!kSERV_INTEGRATE_THE_CHANNEL_INFO);
+    KCHECK(!kSERV_GLOBAL_EVENT_TABLE);
+    KCHECK(!kSERV_GOLD_TICKET);
+    KCHECK(!kSERV_STEAM);
+    KCHECK(!kSERV_CHANNELING_AERIA);
+
+    // Region: the tree selects none, so the shared/global configuration is what is compiled.
+    KCHECK(!kSERV_COUNTRY_CN);
+    KCHECK(!kSERV_COUNTRY_TH);
+    KCHECK(!kSERV_COUNTRY_US);
 }
 
 KTEST(Performer, identifiersMatchOriginalHeader) {

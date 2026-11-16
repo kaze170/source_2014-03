@@ -60,6 +60,8 @@ public:
 
     // Builds a KChannelInfo row for the channel list reply.
     ChannelInfo toChannelInfo(const ChannelConfig& channel) const;
+    // Builds the KChannelBonusInfo the reply's map carries for that channel.
+    static ChannelBonusInfo bonusInfoFor(const ChannelConfig& channel);
 
     void setDeleteReuseDelayMs(std::int64_t value) { deleteReuseDelayMs_ = value; }
 

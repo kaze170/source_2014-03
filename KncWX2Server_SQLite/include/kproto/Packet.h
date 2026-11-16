@@ -54,19 +54,14 @@ struct NetAddress {
     }
 };
 
-// KAccountBlockInfo: block end time, reason, plus the 2013 extra fields.
+// KAccountBlockInfo: only the end time and the reason are on the wire in this build -
+// SERV_HACKING_USER_CHECK_COUNT (which adds block type, reason 2 and end date) is not defined.
 struct AccountBlockInfo {
     WideString endTime;
     WideString blockReason;
-    byte blockType = 0;
-    WideString blockReason2;
-    WideString blockEndDate;
     void serialize(Serializer& s) {
         s.io(endTime);
         s.io(blockReason);
-        s.io(blockType);
-        s.io(blockReason2);
-        s.io(blockEndDate);
     }
 };
 

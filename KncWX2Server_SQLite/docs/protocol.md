@@ -111,8 +111,9 @@ wstring version
 int  ok            NET_OK / ERR_CONNECT_00 (3) / ERR_CONNECT_04 (4) / ERR_CONNECT_05 (5)
 int  udpPort       the NC UDP port of the channel (9151 by default)
 int  channelId
-bool udpKickOff    <- UDP_CAN_NOT_SEND_USER_KICK (off in this build, so absent)
 ```
+
+`udpKickOff` (`UDP_CAN_NOT_SEND_USER_KICK`) is not part of this build, so the ack is a flat 12 bytes.
 
 `EGS_VERIFY_ACCOUNT_REQ` (`KUserAuthenticateReq`)
 
@@ -120,16 +121,22 @@ bool udpKickOff    <- UDP_CAN_NOT_SEND_USER_KICK (off in this build, so absent)
 bool     debugAuth
 wstring  userId
 wstring  password
-wstring  hwid                 <- SERV_OTP_AUTH
-string   machineId            <- SERV_MACHINE_ID_DUPLICATE_CHECK
-int      channelRandomKey     <- SERV_DLL_LIST_CHECK_BEFOR_LOADING
-byte[8]  charServerSn         <- SERV_SERIAL_NUMBER_AVAILABILITY_CHECK_IN_GAMESERVER (SERVER_SN bytes)
-wstring  clientTime           <- SERV_CHECK_MACHINE_LOCALTIME (off here, so absent)
+wstring  hwid                 <- SERV_OTP_AUTH (on)
+string   machineId            <- SERV_MACHINE_ID_DUPLICATE_CHECK (on)
 int      channelingCode
-bool     manualLogin          <- SERV_KOG_OTP_VERIFY
-wstring  socketId             <- SERV_COUNTRY_TH (off here)
-bool     steamClient          <- SERV_STEAM (off here)
-bool     aeriaClient          <- SERV_CHANNELING_AERIA (off here)
+bool     manualLogin          <- SERV_KOG_OTP_VERIFY (on)
+```
+
+Six fixed bytes plus the four string prefixes; an empty request is 22 bytes. Each of the following is
+resolved *off* in this build, so it is **not** on the wire and must not be read from it:
+
+```
+int      channelRandomKey     <- SERV_DLL_LIST_CHECK_BEFOR_LOADING   (off)
+byte[12] charServerSn         <- SERV_SERIAL_NUMBER_AVAILABILITY_CHECK_IN_GAMESERVER (off, SERVER_SN bytes)
+wstring  clientTime           <- SERV_CHECK_MACHINE_LOCALTIME        (off)
+wstring  socketId             <- SERV_COUNTRY_TH                     (off)
+bool     steamClient          <- SERV_STEAM                          (off)
+bool     aeriaClient          <- SERV_CHANNELING_AERIA               (off)
 ```
 
 `EGS_VERIFY_ACCOUNT_ACK`
@@ -145,8 +152,10 @@ u32          nexonSn
 wstring      clientIp         <- SERV_CLIENT_PUBLIC_IP
 u8           channelCode
 wstring      channelUserId
-int          eventMoney       <- SERV_EVENT_MONEY (off here, so absent)
 ```
+
+`eventMoney` (`SERV_EVENT_MONEY`) is resolved off in this build, so the ack ends right there: 71
+bytes with all ten string length prefixes zero.
 
 `KAccountInfo`
 
@@ -157,14 +166,17 @@ wstring  name
 int      authLevel
 bool     internalUser
 KAccountOption          { bool playGuide }
-KAccountBlockInfo       { wstring endTime; wstring reason; byte type; wstring reason2; wstring endDate }
+KAccountBlockInfo       { wstring endTime; wstring reason }    // SERV_HACKING_USER_CHECK_COUNT off
 bool     isRecommend
 bool     isGuestUser
 wstring  otp
 wstring  regDate        <- SERV_CASH_ITEM_LIST
 wstring  lastLogin      <- SERV_SECOND_SECURITY
-int      channelRandomKey <- SERV_DLL_LIST_CHECK_BEFOR_LOADING
 ```
+
+44 bytes with every string empty. `channelRandomKey` (`SERV_DLL_LIST_CHECK_BEFOR_LOADING`) is not
+part of this build, and the block info stops after `reason`: its `byte type`, `wstring reason2` and
+`wstring endDate` only travel with `SERV_HACKING_USER_CHECK_COUNT`.
 
 ### 6.2 Channel port
 
@@ -177,7 +189,8 @@ int      channelRandomKey <- SERV_DLL_LIST_CHECK_BEFOR_LOADING
 
 `EGS_GET_CHANNEL_LIST_ACK` (`SERV_CHANNEL_LIST_RENEWAL`): `int serverGroupId`,
 `vector<KChannelInfo>`, `map<int, KChannelBonusInfo>`; bonus info is
-`{ int expBonus; int dropBonus; }`.
+`{ bool enable; int beginLevel; int endLevel; int perExp; int perEd }` (17 bytes, and the level
+range is inclusive).
 
 `KChannelInfo`
 
@@ -193,21 +206,30 @@ int      maxUser
 int      currentUser
 int      curPartyCount
 int      playPartyCount
-KChannelBonusInfo bonusInfo     <- SERV_INTEGRATE_THE_CHANNEL_INFO (off here, so absent)
 ```
 
-`EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_ACK`: `int ok`, `int unitSlot`, `vector<KUnitInfo>`.
+The channel carries no `bonusInfo` member: `SERV_INTEGRATE_THE_CHANNEL_INFO` is resolved off, so the
+bonus table only travels in the `EGS_GET_CHANNEL_LIST_ACK` map above. 40 bytes with both strings
+empty.
+
+`EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_ACK`: `int ok`, `int unitSlot`, `vector<KUnitInfo>`,
+`bool sharingBank <- SERV_SHARING_BANK_QUEST_CASH` (on in this build; it is *last*, not next to
+`ok`).
 
 `EGS_CREATE_UNIT_REQ`: `wstring nickName`, `int unitClass`.
-`EGS_CREATE_UNIT_ACK`: `int ok`, `KUnitInfo`, `vector<int> skillSlot`, `wstring enableDate`.
+`EGS_CREATE_UNIT_ACK`: `int ok`, `KUnitInfo`, `vector<int> skillSlot`, `wstring enableDate`
+(282 bytes with an empty character).
 
-`EGS_DELETE_UNIT_REQ`: `i64 unitUid`, `i64 userUid <- SERV_UNIT_DELETE_EXCEPTION_MODIFY`.
-`EGS_DELETE_UNIT_ACK`: `int ok`, `i64 unitUid`, `u32 knmSerialNum`, `wstring nickName <- SERV_CHAR_LOG`,
-`u8 level`, `char unitClass`.
+`EGS_DELETE_UNIT_REQ`: `i64 unitUid`, `i64 userUid <- SERV_UNIT_DELETE_EXCEPTION_MODIFY` (on, 16 bytes).
+`EGS_DELETE_UNIT_ACK`: `int ok`, `i64 unitUid`, `u32 knmSerialNum`, `int guildUid <- GUILD_TEST` (on),
+`wstring nickName`, `u8 level`, `char unitClass` (`SERV_CHAR_LOG`, on). `SERV_UNIT_WAIT_DELETE` is
+off, so neither delete date is sent. 26 bytes with an empty nick name.
 
-`EGS_SELECT_UNIT_REQ`: `i64 unitUid`. `EGS_SELECT_UNIT_ACK`: `int ok`.
+`EGS_SELECT_UNIT_REQ`: `i64 unitUid`, `set<int> codeEventScriptId <- SERV_CODE_EVENT` (on; the
+`map<int, ...> globalEventData` of `SERV_GLOBAL_EVENT_TABLE` is off, so it is absent).
+`EGS_SELECT_UNIT_ACK`: `int ok`.
 
-`EGS_GET_MY_INVENTORY_ACK`: `int ok`, `bool isRecommend`.
+`EGS_GET_MY_INVENTORY_ACK`: `int ok`, `bool isRecommend`, `bool sharingBank`.
 `EGS_SELECT_UNIT_INVENTORY_INFO_NOT`: `int slotCategory`, `map<i64, KInventoryItemInfo>`.
 
 ### 6.3 KUnitInfo
@@ -225,22 +247,40 @@ int   sPoint, csPoint, maxCsPoint, wstring csPointEndDate
 int   nowBaseLevelExp, nextBaseLevelExp, straightVictories
 KStat stat, KStat gameStat            { 5 x int: HP, atkPhys, atkMag, defPhys, defMag }
 KLastPositionInfo lastPos             { int mapId; u8 touchLine; u16 posValue; bool ignore <- SERV_BATTLE_FIELD_BOSS }
+KBuffInfo buffInfo                    { KBuffFactor factor; i64 startTime; i64 endTime }
 int   win, lose
 map<int, KDungeonClearInfo>           { int id; int maxScore; char maxRank; wstring clearTime; bool isNew }
 map<int, KTCClearInfo>                { int id; wstring clearTime; bool isNew }
+map<int, KDungeonPlayInfo>            { int id; int playTimes; int clearTimes; bool isNew }
 map<int, KInventoryItemInfo>
 KUnitSkillData
 bool  isParty, int spiritMax, int spirit, bool isGameBang
+char  pcBangType                      <- SERV_PC_BANG_TYPE
 int   titleId                         <- SERV_TITLE_DATA_SIZE (int, not short)
 KUserGuildInfo                        { int uid; wstring name; u8 grade; int honor }
 wstring lastLoginTime
+i64   warpVipEndDate                  <- SERV_ADD_WARP_BUTTON
+int   eventQuestClearCount
+int   exchangeCount
 ```
 
-`KInventoryItemInfo` = `{ i64 itemUid; char slotCategory; short slotId; KItemInfo }`.
+`KBuffFactor` = `{ vector<KBuffBehaviorFactor>; vector<KBuffFinalizerFactor>; KBuffIdentity;
+float accumulationMultiplier; u8 accumulationCountNow; int factorId }`, where each
+`KBuffBehaviorFactor`/`KBuffFinalizerFactor` is `{ u32 type; vector<float> values }` and
+`KBuffIdentity` is `{ u32 templedId; u32 uniqueNum }`.
+
+`KUnitInfo` is 270 bytes with every string and container empty (226 bytes before the buff block,
+dungeon play map and VIP tail were added), which `tests/TestPacketLayout.cpp` pins down.
+
+`KInventoryItemInfo` = `{ i64 itemUid; char slotCategory; short slotId; KItemInfo }` (43 bytes empty).
 `KItemInfo` (2013-05 item rework enabled) = `{ int itemId; char usageType; int quantity;
-short endurance; u8 sealData; char enchantLevel; KItemAttributeEnchantInfo (3 chars);
+short endurance; unsigned char sealData; char enchantLevel; KItemAttributeEnchantInfo (3 chars);
 vector<int> itemSocket; vector<int> randomSocket; char itemState; short period;
-wstring expirationDate; byte expandedSocketNum }`.
+wstring expirationDate; byte expandedSocketNum }` (32 bytes empty).
+
+`sealData` is the one field whose *signedness* matters even though the size does not: the 2014 header
+declares `unsigned char`, and a sealed item stores `>= 100`, so declaring it `char` would let a value
+read back negative. `m_iGoldTicketKeyUID` (`SERV_GOLD_TICKET`) is resolved off and is not sent.
 
 ## 7. Reply codes
 

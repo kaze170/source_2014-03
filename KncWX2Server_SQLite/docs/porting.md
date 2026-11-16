@@ -62,9 +62,35 @@ Keeping that contract is why several "obvious" cleanups were rejected:
 ## Feature flags
 
 `tools/gen_featureflags.py` reads `Common/ServerDefine.h` and emits one `constexpr bool` per
-`SERV_*` macro: 568 enabled, 133 disabled. That single set is what every packet layout in this
-rewrite was resolved with. If a flag is ever flipped, the `static_assert`s in
+macro: 691 enabled, 185 disabled, plus 61 that the packet headers test but the define tree never
+mentions (region `NONE`). That single set is what every packet layout in
+this rewrite was resolved with. If a flag is ever flipped, the `static_assert`s in
 `include/kproto/UnitPackets.h` fail the build instead of silently changing the wire format.
+
+The generator is a small preprocessor, not a grep: it walks the original include chain in file order
+and honours `#undef`, so the 351 macros that `ServerDefine.h` only *mentions* (they come from
+`OnlyGlobal/ServerDefine/ServerDefine_Global.h`, through the region ladder) are counted, and the ones
+that are `#undef`ed later - or defined only inside a block that is itself off - are not.
+
+The 61 extra entries come from scanning `CommonPacket.h`, `ClientPacket.h`, `ServerPacket.h` and the
+two matching `.cpp` files for `#ifdef`/`#if defined(...)`. A macro that guards a *field* but is never
+defined - `SERV_GOLD_TICKET` around `m_iGoldTicketKeyUID`, `SERV_STEAM` around `m_bSteamClient` - is
+off, and keeping it in the table means "off" and "unknown" can no longer be confused.
+
+### Checking a packet layout
+
+`tools/verify_packets.py` is the guard rail. For every type in its table it resolves the original
+`SERIALIZE_DEFINE_PUT` body with the generated flags, reduces each field to a canonical token
+(`i8/u8/i16/.../f32/wstr/str`, `vec<>`, `map<>`, nested structs expanded recursively) and compares
+that ordered token stream with our `serialize()`. Field *names* may differ; order, width, signedness
+and conditionality may not. It currently reports `42 packet layout(s) match the 2014 serializers`, and
+it is how the missing `guildUid` in `EGS_DELETE_UNIT_ACK`, the wrong `channelRandomKey` in the login
+request and the unsigned `sealData` were found. It also fails when a type it checks tests a flag the
+generated table does not define, which is how those 61 flags were found in the first place.
+
+`tools/dump_original_layouts.py <Type>...` prints the resolved declaration of any original type (and
+`--sizes` prints the fixed byte count of each), which is the fastest way to answer "what does the 2014
+struct actually contain".
 
 ## Known gaps
 
@@ -74,7 +100,9 @@ rewrite was resolved with. If a flag is ever flipped, the `static_assert`s in
   `EGS_VERIFY_ACCOUNT_REQ` and the channel/character packets; everything past unit selection is
   missing.
 * `SocialRepository` / `BillingRepository` / `ProgressRepository` are complete against the schema
-  but no packet handler calls them yet (friends, mail, guilds, cash items, rankings).
+  but almost nothing calls them yet. The exception is guild membership: `ChannelService::toUnitInfo`
+  and `EGS_DELETE_UNIT_ACK` read it so the `KUserGuildInfo` block and the ack's `guildUid` carry the
+  character's real guild instead of zeros. Friends, mail, cash items and rankings have no handler.
 * Item templates (`ItemTemplet.mdb`, 8 MB of stats) are not imported; `kgame::Character` reads the
   per-item attributes and sockets that are stored in the database, not the template table.
 * `Scripts` / `ScriptDBManager` (the `.mdb` script tables) are not read at runtime.
@@ -84,13 +112,15 @@ rewrite was resolved with. If a flag is ever flipped, the `static_assert`s in
 ## Testing
 
 ```sh
-make test                                  # 78 tests, ~2 s
+make test                                  # 90 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
 | suite | covers |
 | ----- | ------ |
 | `Wire` | serializer both directions, every primitive, containers, `SerBuffer` compression, envelope offsets, crypto known answers |
+| `PacketLayout` | the wire size and field order of every client facing packet, straight off the 2014 `SERIALIZE_DEFINE_PUT` bodies (empty-string baselines, the delete-ack guild uid, the unsigned seal byte) |
+| `PacketFlags` | the feature flags that decide *which fields exist*, so a regenerated flag table cannot move bytes without failing a test |
 | `Net` | framing, SPI-0 handshake over a real socket, sealed frames, ICV mismatch, partial frames, dispatch |
 | `Db` | schema apply + idempotency, accounts, units, inventory, transactions, foreign keys |
 | `Game` | level curve, stat table, character load/save, inventory categories, nickname/enchant/drop rules |

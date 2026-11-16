@@ -235,6 +235,12 @@ private:
         writeCount(v.size());
         for (const auto& e : v) writeOne(e);
     }
+    // A fixed size C array is written element by element with no count in front - the 2014
+    // serializer spelled those out as PUT(x[0]) .. PUT(x[N-1]).
+    template <class T, std::size_t N>
+    void w(const T (&v)[N]) {
+        for (std::size_t i = 0; i < N; ++i) writeOne(v[i]);
+    }
     template <class T>
     void w(const std::set<T>& v) {
         writeCount(v.size());
@@ -332,6 +338,13 @@ private:
     void r(WideString& v);
     void r(SerBuffer& v);
 
+    template <class T, std::size_t N>
+    void r(T (&v)[N]) {
+        for (std::size_t i = 0; i < N; ++i) {
+            readOne(v[i]);
+            if (failed()) return;
+        }
+    }
     template <class T>
     void r(std::vector<T>& v) {
         v.clear();

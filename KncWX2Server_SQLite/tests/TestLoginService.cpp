@@ -141,7 +141,6 @@ KTEST(Login, connectRepliesWithTheConfiguredPorts) {
     KCHECK_EQ(ack.ok, static_cast<int>(kNetOk));
     KCHECK_EQ(ack.channelId, f.serverConfig.channels.front().channelId);
     KCHECK_EQ(ack.udpPort, static_cast<int>(f.serverConfig.channels.front().ncUdpPort));
-    KCHECK(!ack.udpKickOff);
     KCHECK(f.session.state == LoginState::kConnectedClient);
 }
 
@@ -225,7 +224,6 @@ KTEST(Login, verifyReportsTheBlockDetails) {
     // A blocked login still receives the block details, otherwise the client cannot show why.
     KCHECK_EQ(ack.accountInfo.blockInfo.endTime, WideString(u"9999-12-31 23:59:59"));
     KCHECK_EQ(ack.accountInfo.blockInfo.blockReason, WideString(u"policy"));
-    KCHECK_EQ(static_cast<int>(ack.accountInfo.blockInfo.blockType), 1);
     KCHECK(!f.session.authenticated);
 }
 
