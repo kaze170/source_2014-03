@@ -179,21 +179,30 @@ bool SecurityDatabase::contains(SpiType spi) const {
     return map_.find(spi) != map_.end();
 }
 
-SecurityAssociation& SecurityDatabase::get(SpiType spi) {
+SecurityAssociation SecurityDatabase::get(SpiType spi) const {
     std::lock_guard<std::mutex> guard(mutex_);
     auto it = map_.find(spi);
     if (it == map_.end()) it = map_.find(0);
+    if (it == map_.end()) return SecurityAssociation{};
     return it->second;
 }
 
-const SecurityAssociation& SecurityDatabase::get(SpiType spi) const {
+SecurityAssociation SecurityDatabase::defaultSA() { return get(0); }
+
+void SecurityDatabase::bumpSequenceNum(SpiType spi) {
+    if (spi == 0) return;  // the default association is shared and never advances
+    std::lock_guard<std::mutex> guard(mutex_);
+    const auto it = map_.find(spi);
+    if (it != map_.end()) it->second.incrSequenceNum_notRWM();
+}
+
+bool SecurityDatabase::validateSequenceNum(SpiType spi, SeqType seq) {
     std::lock_guard<std::mutex> guard(mutex_);
     auto it = map_.find(spi);
     if (it == map_.end()) it = map_.find(0);
-    return it->second;
+    if (it == map_.end()) return false;
+    return it->second.isValidSequenceNum_notRWM(seq);
 }
-
-SecurityAssociation& SecurityDatabase::defaultSA() { return get(0); }
 
 std::size_t SecurityDatabase::size() const {
     std::lock_guard<std::mutex> guard(mutex_);
@@ -208,7 +217,13 @@ SecureBuffer::SecureBuffer(SpiType spi, const void* recv, std::size_t bytes) : s
     buffer_.assign(p, p + bytes);
 }
 
-SecurityAssociation& SecureBuffer::sa() const { return SecurityDatabase::instance().get(spi_); }
+SecurityAssociation& SecureBuffer::sa() const {
+    if (!hasSa_) {
+        sa_ = SecurityDatabase::instance().get(spi_);
+        hasSa_ = true;
+    }
+    return sa_;
+}
 
 std::size_t SecureBuffer::maxSecureSize(std::size_t payloadLen) {
     const std::size_t pad = kBlockSize - ((payloadLen + 1) % kBlockSize) + kBlockSize;
@@ -275,7 +290,7 @@ bool SecureBuffer::create_notRWM(const byte* payload, std::size_t len) {
     buffer_.insert(buffer_.end(), icv.begin(), icv.end());
 
     // Sequence numbers only advance for sessions that own a real SPI (not for SPI 0).
-    if (spi_ != 0) sa().incrSequenceNum_notRWM();
+    SecurityDatabase::instance().bumpSequenceNum(spi_);
     return true;
 }
 
@@ -306,7 +321,7 @@ bool SecureBuffer::isValidPadding(const Bytes& plain, std::size_t& padBytes) con
 bool SecureBuffer::isValidSequenceNum_notRWM(SeqType& seq) const {
     if (buffer_.size() < sizeof(USHORT) + sizeof(UINT32)) return false;
     seq = readLe32(buffer_.data() + sizeof(USHORT));
-    return sa().isValidSequenceNum_notRWM(seq);
+    return SecurityDatabase::instance().validateSequenceNum(spi_, seq);
 }
 
 bool SecureBuffer::isAuthentic_notRWM(bool checkSequenceNum) {

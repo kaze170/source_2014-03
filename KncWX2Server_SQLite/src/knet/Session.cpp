@@ -147,6 +147,13 @@ void Session::onClose(Reactor& reactor) {
     if (closed_) return;
     closed_ = true;
     if (sock_ != kInvalidSocket) {
+        // Drop anything still queued for writing before the socket goes away, then shut the write
+        // side down so the peer sees an orderly FIN. Calling close() with unread input pending
+        // makes the kernel send RST, and RST throws away data we had already written - which is
+        // exactly the reply a handler produces before deciding to hang up (a blocked account is
+        // told why, then dropped).
+        flush();
+        shutdownWrite(sock_);
         closeSocket(sock_);
         sock_ = kInvalidSocket;
     }

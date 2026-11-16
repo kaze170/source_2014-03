@@ -146,6 +146,15 @@ SocketHandle bindUdp(unsigned short port) {
     return sock;
 }
 
+bool shutdownWrite(SocketHandle sock) {
+    if (sock == kInvalidSocket) return false;
+#if defined(_WIN32)
+    return ::shutdown(static_cast<SOCKET>(sock), SD_SEND) == 0;
+#else
+    return ::shutdown(static_cast<int>(sock), SHUT_WR) == 0;
+#endif
+}
+
 void closeSocket(SocketHandle sock) {
     if (sock == kInvalidSocket) return;
 #if defined(_WIN32)

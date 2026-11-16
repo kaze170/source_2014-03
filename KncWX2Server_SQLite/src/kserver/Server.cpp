@@ -171,13 +171,15 @@ void Server::stop() {
     started_ = false;
 }
 
-ServerSession* Server::findSession(net::Session& session) {
+std::shared_ptr<ServerSession> Server::findSession(net::Session& session) {
     const auto it = sessions_.find(&session);
-    return it == sessions_.end() ? nullptr : it->second.get();
+    return it == sessions_.end() ? nullptr : it->second;
 }
 
 void Server::onEvent(net::Session& session, Event& event) {
-    if (ServerSession* bound = findSession(session)) {
+    // Hold the session for the whole call: onEvent() can close the connection, and onSessionClosed()
+    // erases it from sessions_ - without this reference that would free the object underneath us.
+    if (std::shared_ptr<ServerSession> bound = findSession(session)) {
         bound->onEvent(event);
         return;
     }

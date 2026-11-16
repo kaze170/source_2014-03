@@ -49,7 +49,10 @@ public:
 
     // Session bookkeeping (called by ServerSession).
     int connectedUsers() const { return static_cast<int>(sessions_.size()); }
-    ServerSession* findSession(net::Session& session);
+    // Returns a strong reference, not a raw pointer: a handler may close the session, and closing
+    // it erases the entry from sessions_, which would destroy the object while the caller is still
+    // inside its onEvent().
+    std::shared_ptr<ServerSession> findSession(net::Session& session);
 
     bool started() const { return started_; }
 

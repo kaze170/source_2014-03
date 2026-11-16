@@ -165,7 +165,10 @@ KTEST(Channel, selectingAKnownServerSetReturnsItsAddress) {
     KCHECK_EQ(f.session.serverSetId, f.serverConfig.serverSets.front().id);
 }
 
-KTEST(Channel, selectingAnUnknownServerSetIsRefusedWithErrVerify15) {
+// GSUserSession.cpp:2166 never looks at m_ServerSetID - the comment there says the deployment has
+// exactly one server set. Sending it a set id that does not exist is therefore not an error: the
+// original still answers with its own address, so a client cannot be stranded by a stale id.
+KTEST(Channel, selectServerSetIgnoresTheRequestedIdLikeThe2014Handler) {
     Fixture f;
     RecordingResponder responder;
     SelectServerSetReq request;
@@ -175,8 +178,80 @@ KTEST(Channel, selectingAnUnknownServerSetIsRefusedWithErrVerify15) {
 
     SelectServerSetAck ack;
     KCHECK(responder.last(ack));
-    KCHECK_EQ(ack.ok, static_cast<int>(kErrVerifyNoChannelId));  // ERR_VERIFY_15
-    KCHECK_EQ(f.session.serverSetId, 0);
+    KCHECK_EQ(ack.ok, static_cast<int>(kNetOk));
+    KCHECK_EQ(ack.ip, toWide(f.serverConfig.serverSets.front().ip));
+    KCHECK_EQ(ack.port, f.serverConfig.serverSets.front().port);
+    KCHECK_EQ(f.session.serverSetId, f.serverConfig.serverSets.front().id);
+}
+
+// The block branch of the same handler: any punished level gets ERR_VERIFY_11 (15, because
+// SERV_ACCOUNT_BLOCK_MESSAGE_RENEWAL is not defined), the block reason, and then a disconnect.
+KTEST(Channel, aBlockedAccountIsToldWhyAndThenDisconnected) {
+    Fixture f;
+    RecordingResponder responder;
+    f.session.account.authLevel = -3;  // SEnum::UAL_BLOCKED_3
+    f.session.account.blockInfo.endTime = WideString(u"2014-04-01 00:00");
+    f.session.account.blockInfo.blockReason = WideString(u"cheating");
+    Event event = f.makeEvent(EGS_SELECT_SERVER_SET_REQ);
+    const bool keepOpen = f.service->handle(f.session, responder, event);
+
+    SelectServerSetAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.ok, static_cast<int>(kErrVerifyBlocked));  // ERR_VERIFY_11 == 15
+    KCHECK(ack.accountBlockInfo.endTime == WideString(u"2014-04-01 00:00"));
+    KCHECK(ack.accountBlockInfo.blockReason == WideString(u"cheating"));
+    KCHECK(responder.disconnectReason == "account blocked");
+    KCHECK(!keepOpen);
+}
+
+// -1 is UAL_BLOCKED_1, which the 2014 enum documents as a warning that still plays.
+KTEST(Channel, aWarningLevelIsNotABlock) {
+    Fixture f;
+    RecordingResponder responder;
+    f.session.account.authLevel = -1;  // SEnum::UAL_BLOCKED_1
+    Event event = f.makeEvent(EGS_SELECT_SERVER_SET_REQ);
+    const bool keepOpen = f.service->handle(f.session, responder, event);
+
+    SelectServerSetAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.ok, static_cast<int>(kNetOk));
+    KCHECK(responder.disconnectReason.empty());
+    KCHECK(keepOpen);
+}
+
+// GSUserSession.cpp:2086 hard codes the name, so an unnamed configuration must still look like the
+// original rather than shipping an empty string to the client.
+KTEST(Channel, anUnnamedServerSetFallsBackToThe2014Literal) {
+    Fixture f;
+    RecordingResponder responder;
+    // The service holds its own copy of the configuration, so it has to be built after the edit.
+    f.serverConfig.serverSets.front().name.clear();
+    f.service = std::make_unique<ChannelService>(f.repos(), f.serverConfig);
+    Event event = f.makeEvent(EGS_GET_SERVER_SET_DATA_REQ);
+    f.service->handle(f.session, responder, event);
+
+    GetServerSetDataAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.serverSetList.size(), std::size_t(1));
+    KCHECK(ack.serverSetList.front().serverSetName == WideString(u"\uC194\uB808\uC2A4"));
+}
+
+// GSUserSession.cpp:2086 compares against 1500 and 3000, not against a percentage of the capacity.
+KTEST(Channel, userCountLevelUsesThe2014AbsoluteThresholds) {
+    KCHECK_EQ(static_cast<int>(userCountLevel(0, 3000)), static_cast<int>(ServerSetData::kUclFree));
+    KCHECK_EQ(static_cast<int>(userCountLevel(1499, 3000)),
+              static_cast<int>(ServerSetData::kUclFree));
+    KCHECK_EQ(static_cast<int>(userCountLevel(1500, 3000)),
+              static_cast<int>(ServerSetData::kUclNormal));
+    KCHECK_EQ(static_cast<int>(userCountLevel(2999, 3000)),
+              static_cast<int>(ServerSetData::kUclNormal));
+    KCHECK_EQ(static_cast<int>(userCountLevel(3000, 4000)), static_cast<int>(ServerSetData::kUclBusy));
+    KCHECK_EQ(static_cast<int>(userCountLevel(4000, 4000)), static_cast<int>(ServerSetData::kUclFull));
+    // The capacity only separates BUSY from FULL; a tiny capacity does not make an idle server busy.
+    KCHECK_EQ(static_cast<int>(userCountLevel(0, 10)), static_cast<int>(ServerSetData::kUclFree));
+    KCHECK_EQ(static_cast<int>(userCountLevel(10, 10)), static_cast<int>(ServerSetData::kUclFree));
+    // The original substitutes 1 for a nonsensical maximum rather than dividing by it.
+    KCHECK_EQ(static_cast<int>(userCountLevel(0, 0)), static_cast<int>(ServerSetData::kUclFree));
 }
 
 KTEST(Channel, channelListCarriesEveryConfiguredChannel) {

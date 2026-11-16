@@ -13,6 +13,11 @@
 namespace knc::server {
 namespace {
 
+// GSUserSession.cpp:2086 hard codes the server set name. Configured names win (the rewrite serves
+// more than the one set the 2014 build ever shipped), but an unnamed set falls back to the literal
+// so the reply still looks like the original.
+const WideString kServerSetNameLiteral = WideString(u"\uC194\uB808\uC2A4");  // 솔레스
+
 template <class T>
 SerBuffer encode(const T& value) {
     SerBuffer buffer;
@@ -20,14 +25,12 @@ SerBuffer encode(const T& value) {
     return buffer;
 }
 
-// KServerSetData::USER_COUNT_LEVEL from the current/maximum pair.
-char userCountLevel(int current, int max) {
-    if (max <= 0) return ServerSetData::kUclFree;
-    if (current >= max) return ServerSetData::kUclFull;
-    const double ratio = static_cast<double>(current) / static_cast<double>(max);
-    if (ratio < 0.3) return ServerSetData::kUclFree;
-    if (ratio < 0.7) return ServerSetData::kUclNormal;
-    return ServerSetData::kUclBusy;
+
+
+// SEnum::UAL_BLOCKED_2..UAL_BLOCKED_9 (-2..-9), plus the SERV_ADD_BLOCK_DAY trio, which the
+// shipped enum lists unconditionally. UAL_BLOCKED_1 (-1) is a warning and still plays.
+bool isBlockedAuthLevel(int authLevel) {
+    return authLevel <= -2 && authLevel >= -9;
 }
 
 int errorForCreate(db::CreateUnitReason reason) {
@@ -53,6 +56,14 @@ int errorForNickname(knc::game::NicknameVerdict verdict) {
 }
 
 }  // namespace
+
+char userCountLevel(int current, int max) {
+    if (max <= 0) max = 1;  // the original logs a warning and substitutes 1
+    if (current < 1500) return ServerSetData::kUclFree;
+    if (current < 3000) return ServerSetData::kUclNormal;
+    if (current < max) return ServerSetData::kUclBusy;
+    return ServerSetData::kUclFull;
+}
 
 bool ChannelService::requireAuthenticated(AccountSession& state, LoginResponder& responder,
                                          const char* what) {
@@ -154,7 +165,9 @@ bool ChannelService::handleServerSetList(AccountSession& state, LoginResponder& 
     for (const auto& set : config_.serverSets) {
         ServerSetData data;
         data.serverSetId = set.id;
-        data.serverSetName = set.name;
+        // The original ignores the configured name and sends a literal (GSUserSession.cpp:2086
+        // sets serverSetName = L"\uC194\uB808\uC2A4" for every set).
+        data.serverSetName = set.name.empty() ? kServerSetNameLiteral : set.name;
         data.userCountLevel = userCountLevel(0, set.maxUser);
         ack.serverSetList.push_back(data);
     }
@@ -173,26 +186,29 @@ bool ChannelService::handleSelectServerSet(AccountSession& state, LoginResponder
         return true;
     }
 
-    const ServerSetConfig* chosen = nullptr;
-    for (const auto& set : config_.serverSets) {
-        if (set.id == request.serverSetId) {
-            chosen = &set;
-            break;
-        }
-    }
-
     SelectServerSetAck ack;
-    if (!chosen) {
-        ack.ok = kErrVerifyNoChannelId;
-    } else {
-        ack.ok = kNetOk;
-        ack.ip = toWide(chosen->ip);
-        ack.port = chosen->port;
-        state.serverSetId = chosen->id;
-        // The 2014 client showed the block reason on this screen when the account was punished.
+
+    // The block branch runs before anything else in the original: a punished account is told why
+    // and then disconnected, whatever set id it asked for.
+    if (isBlockedAuthLevel(state.account.authLevel)) {
+        // SERV_ACCOUNT_BLOCK_MESSAGE_RENEWAL is defined nowhere in this deployment, so the 2014
+        // build takes the #else path and reports ERR_VERIFY_11 (15) rather than 1293.
+        ack.ok = kErrVerifyBlocked;
         ack.accountBlockInfo.endTime = state.account.blockInfo.endTime;
         ack.accountBlockInfo.blockReason = state.account.blockInfo.blockReason;
+        responder.send(EGS_SELECT_SERVER_SET_ACK, encode(ack));
+        responder.disconnect("account blocked");
+        return false;
     }
+
+    // "현재는 서버군이 하나다" - the original never inspects m_ServerSetID. It answers with its own
+    // public address and the master port, which is exactly how a client is steered to the channel
+    // server. A configured set only contributes those two values.
+    const ServerSetConfig& chosen = config_.serverSets.front();
+    ack.ok = kNetOk;
+    ack.ip = toWide(chosen.ip);
+    ack.port = chosen.port;
+    state.serverSetId = chosen.id;
     responder.send(EGS_SELECT_SERVER_SET_ACK, encode(ack));
     return true;
 }

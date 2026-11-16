@@ -32,6 +32,10 @@ SocketHandle bindUdp(unsigned short port);
 
 void closeSocket(SocketHandle sock);
 
+// Half-closes the write side (FIN) while leaving the socket open. Returns false when the peer is
+// already gone; callers still have to closeSocket() afterwards.
+bool shutdownWrite(SocketHandle sock);
+
 // SO_RCVTIMEO is a timeval on POSIX and a millisecond DWORD on Winsock, so deadlines on a blocking
 // socket go through this helper instead of a raw setsockopt.
 bool setRecvTimeout(SocketHandle sock, int milliseconds);

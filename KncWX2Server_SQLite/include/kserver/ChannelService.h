@@ -36,6 +36,11 @@ struct ChannelLimits {
     static constexpr int kDefaultEquipmentSlots = 80;
 };
 
+// KServerSetData::USER_COUNT_LEVEL for a (current, max) pair. GSUserSession.cpp:2086 compares
+// against the absolute constants 1500 and 3000 and only falls back to the capacity for BUSY/FULL,
+// so this is not a percentage. Exposed so the rules can be tested directly.
+char userCountLevel(int current, int max);
+
 class ChannelService {
 public:
     ChannelService(db::Repositories& repos, const Config& config)

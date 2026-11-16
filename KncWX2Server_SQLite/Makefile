@@ -94,6 +94,8 @@ check: tools
 	python3 tools/verify_packets.py --self-test
 	python3 tools/verify_packets.py
 	python3 tools/verify_eventids.py
+	python3 tools/verify_neterrors.py --self-test
+	python3 tools/verify_neterrors.py
 	rm -rf $(BUILD)/checkdb && mkdir -p $(BUILD)/checkdb
 	$(BIN)/knc_dbtool --db $(BUILD)/checkdb/knc.db init
 	$(BIN)/knc_dbtool --db $(BUILD)/checkdb/knc.db check

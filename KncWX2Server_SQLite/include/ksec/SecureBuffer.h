@@ -74,12 +74,19 @@ public:
     void remove(SpiType spi);
     bool contains(SpiType spi) const;
 
-    // Returns the association for spi; falls back to the SPI 0 default when unknown (the original
-    // behaviour of KSADatabase::GetSA).
-    SecurityAssociation& get(SpiType spi);
-    const SecurityAssociation& get(SpiType spi) const;
+    // Returns a *copy* of the association for spi; falls back to the SPI 0 default when unknown
+    // (the original behaviour of KSADatabase::GetSA). A copy, not a reference: sessions are served
+    // by several threads, and returning a reference into the map left it dangling as soon as
+    // another thread created or removed an association and the unordered_map rehashed.
+    SecurityAssociation get(SpiType spi) const;
 
-    SecurityAssociation& defaultSA();
+    // Sequence bookkeeping has to happen inside the database: it is the single owner of the four
+    // bytes that change per frame, and doing it under the lock keeps two threads from racing on
+    // the same counter.
+    void bumpSequenceNum(SpiType spi);
+    bool validateSequenceNum(SpiType spi, SeqType seq);
+
+    SecurityAssociation defaultSA();
 
     std::size_t size() const;
 
@@ -121,6 +128,7 @@ public:
     static std::size_t maxSecureSize(std::size_t payloadLen);
 
 private:
+    void useAssociation(const SecurityAssociation& association) { sa_ = association; hasSa_ = true; }
     SecurityAssociation& sa() const;
 
     void generateIv(std::array<byte, kIvSize>& iv) const;
@@ -135,6 +143,10 @@ private:
 
     SpiType spi_ = 0;
     Bytes buffer_;
+    // Snapshot taken on first use so every call in one operation sees the same keys and the
+    // sequence counter, even if another thread touches the database meanwhile.
+    mutable SecurityAssociation sa_;
+    mutable bool hasSa_ = false;
 };
 
 // Utility used by the unit tests and the tools: build the SPI 0 default keys.

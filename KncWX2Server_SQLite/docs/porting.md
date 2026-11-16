@@ -98,6 +98,22 @@ comparison, so the guard rail cannot rot into a script that always prints "match
 `--sizes` prints the fixed byte count of each), which is the fastest way to answer "what does the 2014
 struct actually contain".
 
+### Checking the error codes
+
+Every reply carries a bare integer, so "wrong password" is only meaningful because
+`ERR_VERIFY_06` happens to sit at index 12 of a flat C enumeration. Nothing in the rewrite expresses
+that arithmetic, so `tools/verify_neterrors.py` re-derives the whole `NetErrorEnum` from
+`Common/NetError_def.h` and checks each `kErrX = N, // ERR_Y` in `include/kserver/LoginService.h`
+against it. It also refuses a comment that names an error the 2014 header does not define, and it
+re-checks the codes against all ten regional enumerations under `Common/Neterror/` - those renumber
+the enum for other builds (`SERV_SEPARATE_NET_ERROR`), and a code that drifted would mean one thing
+here and something else there.
+
+Current output: `28 error code(s) match the 2014 NetErrorEnum (1367 names in the enumeration, and
+the same values in all 10 regional enumerations)`. Which variant the shipped build actually used was
+settled by the sources: `SERV_SEPARATE_NET_ERROR` appears only in the per-region `ServerDefine_*.h`
+files, never in the shared configuration, so `Common/NetError_def.h` is the one that applied.
+
 ### Checking the event ids
 
 A correctly encoded payload is useless if the event id in front of it is wrong - the client learns what
@@ -131,7 +147,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 100 tests, ~2 s
+make test                                  # 105 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -152,6 +168,20 @@ build/linux/bin/knc_tests --filter Db      # one suite
 the handshake after being redirected), a channel id is refused until the session has authenticated, and
 is answered afterwards - one process, one session, so the handshake that just succeeded is what
 unlocks the channel service on that port.
+
+### Two things the 2014 server set handlers do that look like bugs
+
+`EGS_GET_SERVER_SET_DATA_REQ` (`GSUserSession.cpp:2086`) classifies the load with the absolute
+constants 1500 and 3000 - `iCCU < 1500` is FREE, `< 3000` NORMAL, `< iMaxCCU` BUSY, otherwise FULL.
+The percentage thresholds written in the `USER_COUNT_LEVEL` comments only exist in the original as
+commented-out code, so the rewrite uses the constants, not a ratio of the capacity.
+
+`EGS_SELECT_SERVER_SET_REQ` (`GSUserSession.cpp:2166`) never reads `m_ServerSetID`; the comment says
+the deployment had a single server set. An id that does not exist is therefore not an error - the
+answer is always this server's address and master port. The same handler is where a punished account
+is stopped: any auth level from -2 to -9 gets `ERR_VERIFY_11` (15, because
+`SERV_ACCOUNT_BLOCK_MESSAGE_RENEWAL` is undefined for this build), the block reason, and a
+disconnect. -1 is a warning level and still plays.
 
 `Login` and `Channel` need no sockets at all: `LoginService`/`ChannelService` take a
 `LoginResponder`, so a test drives packets straight into the service and decodes the replies.

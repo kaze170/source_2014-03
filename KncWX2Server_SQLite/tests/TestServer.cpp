@@ -110,7 +110,15 @@ public:
                 sec::SecurityAssociation sa;
                 s.get(spi, sa);
                 s.end();
-                return s.ok() && spi != 0;
+                if (!s.ok() || spi == 0) return false;
+                // Keep our own copy of the association. The server removes it from the shared
+                // SecurityDatabase when it closes the connection, and an unknown SPI silently
+                // falls back to the SPI 0 keys - so decoding through the database would fail for
+                // exactly the replies that arrive just before a hang-up. A real client keeps its
+                // keys locally.
+                sa_ = sa;
+                haveSa_ = true;
+                return true;
             }
         }
         return false;
@@ -165,6 +173,25 @@ public:
         }
     }
 
+    // True when the server has hung up: the socket reports readability and a zero byte read.
+    bool peerClosed(int timeoutMs = 2000) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (inBuf_.empty() && readFrame(50)) continue;  // drain anything still in flight
+            char probe = 0;
+#if defined(_WIN32)
+            const int n = ::recv(static_cast<SOCKET>(sock_), &probe, 1, 0);
+            const bool gone = n == 0 || (n < 0 && ::WSAGetLastError() == WSAECONNRESET);
+#else
+            const int n = static_cast<int>(::recv(sock_, &probe, 1, MSG_PEEK));
+            const bool gone = n == 0 || (n < 0 && (errno == ECONNRESET || errno == EPIPE));
+#endif
+            if (gone) return true;
+            if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK) return false;
+        }
+        return false;
+    }
+
     SpiType spi = 0;
 
 private:
@@ -190,6 +217,18 @@ private:
     }
 
     bool decodeLast(SpiType useSpi, Event& out, bool checkSeq = false) {
+        // Put our own copy of the association back under its SPI. The server deletes it when it
+        // closes, and an unknown SPI quietly falls back to the SPI 0 keys - so without this the
+        // replies that arrive just before a hang-up would fail to authenticate. A real client
+        // keeps its keys locally and never looks them up in the server's database.
+        if (haveSa_ && useSpi != 0) {
+            // Put our own association back under its SPI. The server deletes it when the connection
+            // closes, and an unknown SPI silently falls back to the SPI 0 keys, so without this the
+            // replies that arrive just before a hang-up would fail to authenticate. A real client
+            // keeps its keys locally and never consults the server's database at all.
+            sec::SecurityDatabase::instance().remove(useSpi);
+            sec::SecurityDatabase::instance().insert(useSpi, sa_);
+        }
         sec::SecureBuffer buffer(useSpi, frame_.data(), frame_.size());
         if (!buffer.isAuthentic_notRWM(checkSeq)) return false;
         Bytes payload;
@@ -207,6 +246,8 @@ private:
     net::SocketHandle sock_ = net::kInvalidSocket;
     std::vector<byte> inBuf_;
     std::vector<byte> frame_;
+    sec::SecurityAssociation sa_;
+    bool haveSa_ = false;
 };
 
 std::string tempDbPath() {
@@ -365,6 +406,66 @@ KTEST(Server, startBindsEveryEnabledPortAndReportsCounters) {
     KCHECK_EQ(fixture.server().acceptedOn(PortRole::kLogin), std::size_t(1));
 }
 
+// A handler that ends the session (EGS_SELECT_SERVER_SET_REQ for a blocked account) closes the
+// socket from inside onEvent(). Closing erases the entry from Server::sessions_, which used to
+// destroy the ServerSession while its own onEvent() was still running - a use after free that
+// crashed intermittently. This drives that exact path against a real socket.
+KTEST(Server, aHandlerThatHangsUpLeavesNoDanglingSession) {
+    KCHECK(net::startupSockets());
+    ServerFixture fixture;
+    // The hang-up path logs at debug; raise the level before the server boots so a failure here
+    // comes with the server's own account of what happened.
+    Logger::instance().setLevel(LogLevel::kDebug);
+    KCHECK(fixture.start());
+    Logger::instance().setLevel(LogLevel::kWarn);
+
+    // Punish the account before it logs in, so the channel connect succeeds and the select fails.
+    db::AccountRecord account;
+    KCHECK(fixture.server().repositories().accounts.load(1, &account));
+    KCHECK(fixture.server().repositories().accounts.applyBlock(account.uid, "2014-04-01 00:00",
+                                                              "cheating", -3, "", ""));
+
+    RawClient channel;
+    KCHECK(channel.connectTo(fixture.channelPort()));
+    KCHECK(channel.handshake());
+
+    ConnectReq connect;
+    connect.version = WideString(u"2014031300");
+    Event event;
+    KCHECK(channel.sendPacket(channel.spi, EGS_CONNECT_REQ, connect));
+    KCHECK(channel.receive(event));
+    KCHECK_EQ(event.eventId, EGS_CONNECT_ACK);
+
+    UserAuthenticateReq auth;
+    auth.userId = u"test";
+    auth.password = u"test";
+    KCHECK(channel.sendPacket(channel.spi, EGS_VERIFY_ACCOUNT_REQ, auth));
+    KCHECK(channel.receive(event));
+    KCHECK_EQ(event.eventId, EGS_VERIFY_ACCOUNT_ACK);
+    VerifyAccountAck verifyAck;
+    KCHECK(decodePayload(event.payload, verifyAck));
+    // The verify itself is the "blocked account" answer: code 15, the reason, and then the server
+    // hangs up - returning false from handle() closes the session from inside onEvent().
+    KCHECK_EQ(verifyAck.ok, static_cast<int>(kErrVerifyBlocked));
+    KCHECK(verifyAck.accountInfo.blockInfo.blockReason == WideString(u"cheating"));
+
+    // The hang-up has to be real, and the server must survive it: a session erased while its own
+    // onEvent() was running would have freed it underneath the caller.
+    KCHECK(channel.peerClosed());
+    KCHECK(fixture.server().connectedUsers() == 0);
+
+    channel.close();
+    // Still serving: a fresh connection is accepted and answered.
+    RawClient again;
+    KCHECK(again.connectTo(fixture.channelPort()));
+    KCHECK(again.handshake());
+    KCHECK(again.sendPacket(again.spi, EGS_CONNECT_REQ, connect));
+    KCHECK(again.receive(event));
+    KCHECK_EQ(event.eventId, EGS_CONNECT_ACK);
+    again.close();
+    fixture.stop();
+}
+
 // --------------------------------------------------------------------------- end to end
 KTEST(Server, endToEndLoginAndUnitFlow) {
     KCHECK(net::startupSockets());
@@ -425,6 +526,9 @@ KTEST(Server, endToEndLoginAndUnitFlow) {
     KCHECK_EQ(setAck.serverSetList.size(), std::size_t(1));
     KCHECK_EQ(setAck.serverSetList[0].serverSetId, 1);
     KCHECK(setAck.serverSetList[0].serverSetName == u"Test Server");
+    // A fresh server has 0 CCU, which the 2014 thresholds call FREE.
+    KCHECK_EQ(static_cast<int>(setAck.serverSetList[0].userCountLevel),
+              static_cast<int>(ServerSetData::kUclFree));
 
     SelectServerSetReq select;
     select.serverSetId = 1;
@@ -432,6 +536,15 @@ KTEST(Server, endToEndLoginAndUnitFlow) {
     KCHECK(channel.receive(event));
     KCHECK_EQ(event.eventId, EGS_SELECT_SERVER_SET_ACK);
     SelectServerSetAck selectAck;
+    KCHECK(decodePayload(event.payload, selectAck));
+    KCHECK_EQ(selectAck.ok, static_cast<int>(kNetOk));
+    KCHECK_EQ(selectAck.port, fixture.channelPort());
+    // The ack carries the address the client should dial, taken from the configured set.
+    KCHECK_EQ(selectAck.ip, WideString(u"127.0.0.1"));
+    // GSUserSession.cpp:2166 ignores m_ServerSetID, so a bogus id is answered with the same data.
+    KCHECK(channel.sendPacket(channel.spi, EGS_SELECT_SERVER_SET_REQ, select));
+    KCHECK(channel.receive(event));
+    KCHECK_EQ(event.eventId, EGS_SELECT_SERVER_SET_ACK);
     KCHECK(decodePayload(event.payload, selectAck));
     KCHECK_EQ(selectAck.ok, static_cast<int>(kNetOk));
     KCHECK_EQ(selectAck.port, fixture.channelPort());
@@ -607,6 +720,8 @@ KTEST(Server, portRoleDecidesWhichServiceAnswers) {
     GetServerSetDataAck setAck;
     KCHECK(decodePayload(event.payload, setAck));
     KCHECK_EQ(setAck.ok, static_cast<int>(kNetOk));
+    game.close();
+
     game.close();
 
     // 4. The same request on the login port is refused: LoginService has no handler for it and only
