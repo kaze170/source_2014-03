@@ -217,6 +217,31 @@ KTEST(PacketLayout, unitListAndInventoryAcks) {
 }
 
 // Login side carriers, all read off the 2014 serializers.
+// Structures the service does not currently send but the 2014 protocol defines: they are verified
+// against the 2014 serializers so the header cannot drift away from the protocol unnoticed.
+KTEST(PacketLayout, protocolTypesNotYetSentStillMatchTheWire) {
+    PacketOk ok;
+    KCHECK_EQ(encodedSize(ok), std::size_t{4});
+
+    NetAddress address;
+    KCHECK_EQ(encodedSize(address), std::size_t{6});  // wstring length + u16 port
+    address.ip = WideString(u"1.2.3.4");
+    address.port = 9100;
+    KCHECK_EQ(encodedSize(address), std::size_t{4 + 7 * 2 + 2});
+
+    // The old (pre SERV_CHANNEL_LIST_RENEWAL) channel row: three ints.
+    ChannelSimpleInfo simple;
+    KCHECK_EQ(encodedSize(simple), std::size_t{12});
+
+    // EGS_CHECK_CHANNEL_CHANGE_REQ and its bare KPacketOK ack.
+    CheckChannelChangeReq change;
+    KCHECK_EQ(encodedSize(change), std::size_t{4});
+    change.channelId = 2;
+    const std::vector<byte> bytes = encodedBytes(change);
+    const byte expected[] = {0x00, 0x00, 0x00, 0x02};
+    KCHECK_BYTES(bytes.data(), expected, sizeof(expected));
+}
+
 KTEST(PacketLayout, loginPacketSizes) {
     ConnectReq connect;
     KCHECK_EQ(encodedSize(connect), std::size_t{4});

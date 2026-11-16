@@ -1,5 +1,10 @@
 # Build output (build/linux holds objects, binaries and scratch databases). The Visual Studio
 # project files in build/vcxproj are checked in, so `build/` cannot be ignored wholesale.
+#
+# The negation matters: `*.db` below would otherwise also match the checked-in project files if a
+# broader ignore ever creeps in, and a missing vcxproj is a silent "deleted in the next commit".
+!build/vcxproj/
+!build/vcxproj/**
 build/linux/
 build/*.db
 build/*.db-wal

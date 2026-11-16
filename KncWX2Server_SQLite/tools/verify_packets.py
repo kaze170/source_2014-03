@@ -168,12 +168,19 @@ def expand_token(token, count, depth, expander):
     return out
 
 
+# Used only by self_test() below: {struct name: (mangled member table, mangled serialize body)}.
+MEMBER_OVERRIDE = {}
+BODY_OVERRIDE = {}
+
+
 def our_wire_sequence(name, depth=0):
     """Expands our serialize() body into the ordered list of canonical wire tokens."""
     body = our_struct_body(name)
     if body is None:
         return None
-    members = our_members(name) or {}
+    members = MEMBER_OVERRIDE.get(name) or our_members(name) or {}
+    if name in BODY_OVERRIDE:
+        body = BODY_OVERRIDE[name]
     ser = re.search(r'void serialize\(Serializer& s\)\s*\{(.*?)\}', body, re.S)
     if not ser:
         if not members:
@@ -273,6 +280,10 @@ CHECKS = [
     ('EGS_DELETE_UNIT_REQ', 'DeleteUnitReq'),
     ('EGS_DELETE_UNIT_ACK', 'DeleteUnitAck'),
     ('EGS_SELECT_UNIT_REQ', 'SelectUnitReq'),
+    ('EGS_CHECK_CHANNEL_CHANGE_REQ', 'CheckChannelChangeReq'),
+    ('KChannelSimpleInfo', 'ChannelSimpleInfo'),
+    ('KNetAddress', 'NetAddress'),
+    ('KPacketOK', 'PacketOk'),
     ('EGS_SELECT_UNIT_ACK', 'SelectUnitAck'),
     ('EGS_GET_MY_INVENTORY_ACK', 'GetMyInventoryAck'),
     ('EGS_SELECT_UNIT_INVENTORY_INFO_NOT', 'SelectUnitInventoryInfoNot'),
@@ -388,8 +399,83 @@ def compare(original_type, our_struct, verbose):
     return problems
 
 
+# ------------------------------------------------------------------ self test
+# A comparator that always says "matches" would be worse than no comparator at all, so the two
+# things it must notice are applied to copies of the real tables: a reordered pair of fields and a
+# changed signedness. If either of those stops being reported, the guard rail is broken.
+SELF_TEST_MUTATIONS = [
+    ('reordered fields', ('ItemInfo', ['quantity', 'usageType'])),
+    ('changed signedness', ('ItemInfo', ['sealData'])),
+]
+
+
+def _mutate_item_info(label):
+    """Produces a serialize() body that really disagrees with the 2014 wire."""
+    body = our_struct_body('ItemInfo')
+    if body is None:
+        return None
+    if label == 'reordered fields':
+        # quantity and usageType swapped: same bytes in total, wrong meaning.
+        return body.replace('s.io(usageType);\n        s.io(quantity);',
+                            's.io(quantity);\n        s.io(usageType);')
+    if label == 'changed signedness':
+        members = our_members('ItemInfo') or {}
+        token, count = members.get('sealData', ('u8', 1))
+        flipped = 'i8' if token == 'u8' else 'u8'
+        MEMBER_OVERRIDE['ItemInfo'] = dict(members, sealData=(flipped, count))
+        return body
+    if label == 'dropped field':
+        # guildInfo sits in the middle of KUnitInfo; dropping it shifts everything after it.
+        unit = our_struct_body('UnitInfo')
+        if unit is None:
+            return None
+        dropped = unit.replace('s.io(guildInfo);\n', '')
+        if dropped == unit:
+            return None
+        BODY_OVERRIDE['UnitInfo'] = dropped
+        return unit
+    return None
+
+
+def self_test():
+    """Feeds known-bad layouts through the comparator and reports any it fails to catch."""
+    failures = []
+    for label, struct in (('reordered fields', 'ItemInfo'),
+                          ('changed signedness', 'ItemInfo'),
+                          ('dropped field', 'UnitInfo')):
+        if label == 'dropped field':
+            _mutate_item_info(label)
+            target = 'UnitInfo'
+        else:
+            BODY_OVERRIDE['ItemInfo'] = _mutate_item_info(label)
+            target = 'ItemInfo'
+        try:
+            sequence = our_wire_sequence(target)
+        finally:
+            BODY_OVERRIDE.pop('ItemInfo', None)
+            BODY_OVERRIDE.pop('UnitInfo', None)
+            MEMBER_OVERRIDE.pop('ItemInfo', None)
+        expected = original_wire_sequence('K' + target) or original_wire_sequence(target)
+        if expected is None:
+            failures.append('%s: self test cannot resolve the original %s' % (label, target))
+        elif sequence is None:
+            failures.append('%s: self test could not rebuild %s' % (label, target))
+        elif sequence == expected:
+            failures.append('%s: struct %s still matched after breaking it' % (label, target))
+    return failures
+
+
 def main():
     verbose = '--verbose' in sys.argv
+    if '--self-test' in sys.argv:
+        failures = self_test()
+        for failure in failures:
+            print(failure)
+        if failures:
+            print('%d self test failure(s): the comparator cannot be trusted' % len(failures))
+            return 1
+        print('self test: the comparator catches reordered fields, changed signedness and dropped fields')
+        return 0
     if not ORIGINAL.FLAG_TABLE:
         raise SystemExit('no feature flags loaded - run tools/gen_featureflags.py first')
     problems = 0

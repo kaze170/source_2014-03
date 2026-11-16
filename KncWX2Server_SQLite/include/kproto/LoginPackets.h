@@ -278,6 +278,10 @@ struct ChannelInfo {
     }
 };
 
+// KChannelSimpleInfo: only the *old* channel list shape. EGS_GET_CHANNEL_LIST_ACK uses it when
+// SERV_CHANNEL_LIST_RENEWAL is off; that flag is on in this build, so the ack carries
+// ChannelInfo instead and nothing here sends this struct. It is kept - and verified - because the
+// 2014 client still speaks the packet, and dropping it would make the header lie about the protocol.
 struct ChannelSimpleInfo {
     int channelId = 0;
     int maxUser = 0;
@@ -304,6 +308,10 @@ struct GetChannelListAck {
 };
 
 // EGS_CHECK_CHANNEL_CHANGE_REQ
+// EGS_CHECK_CHANNEL_CHANGE_REQ / _ACK. The request is a channel id and the ack is a bare KPacketOK.
+// The 2014 game server answered it (GSUserSession.cpp:2253) only from the S_FIELD_MAP state - i.e.
+// after a character had already entered a field - and that part of the game is not simulated here,
+// so this server does not answer it. The layout is verified all the same.
 struct CheckChannelChangeReq {
     int channelId = 0;
     void serialize(Serializer& s) { s.io(channelId); }

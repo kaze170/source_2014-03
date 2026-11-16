@@ -83,10 +83,16 @@ off, and keeping it in the table means "off" and "unknown" can no longer be conf
 `SERIALIZE_DEFINE_PUT` body with the generated flags, reduces each field to a canonical token
 (`i8/u8/i16/.../f32/wstr/str`, `vec<>`, `map<>`, nested structs expanded recursively) and compares
 that ordered token stream with our `serialize()`. Field *names* may differ; order, width, signedness
-and conditionality may not. It currently reports `42 packet layout(s) match the 2014 serializers`, and
-it is how the missing `guildUid` in `EGS_DELETE_UNIT_ACK`, the wrong `channelRandomKey` in the login
-request and the unsigned `sealData` were found. It also fails when a type it checks tests a flag the
-generated table does not define, which is how those 61 flags were found in the first place.
+and conditionality may not. It currently reports `46 packet layout(s) match the 2014 serializers` -
+every struct in `kproto` - and it is how the missing `guildUid` in `EGS_DELETE_UNIT_ACK`, the wrong
+`channelRandomKey` in the login request and the unsigned `sealData` were found. It also fails when a
+type it checks tests a flag the generated table does not define, which is how those 61 flags were
+found in the first place.
+
+A comparator is only worth having if it actually rejects things, so `--self-test` breaks three
+layouts on purpose - a swapped pair of fields, a flipped signedness, and a dropped field in the middle
+of `KUnitInfo` - and fails unless all three are reported. `make check` runs it before the real
+comparison, so the guard rail cannot rot into a script that always prints "matches".
 
 `tools/dump_original_layouts.py <Type>...` prints the resolved declaration of any original type (and
 `--sizes` prints the fixed byte count of each), which is the fastest way to answer "what does the 2014
@@ -112,7 +118,7 @@ struct actually contain".
 ## Testing
 
 ```sh
-make test                                  # 97 tests, ~2 s
+make test                                  # 98 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 

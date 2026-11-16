@@ -197,8 +197,20 @@ def declaration_fields(name):
 
 
 def put_fields(name):
-    """Ordered PUT(...) field names, flags resolved; None when the type has no PUT."""
+    """Ordered PUT(...) field names, flags resolved; None when the type has no PUT.
+
+    The two sides spell the same packet differently: the declaration is `DECL_PACKET( EGS_X )`
+    (the macro adds the K), while the serializer is `SERIALIZE_DEFINE_PUT( KEGS_X, ... )`. Looking
+    only for `KEGS_X` when the caller asked about `EGS_X` used to make a packet that does have a
+    serializer look like it has none.
+    """
     m = re.search(r'SERIALIZE_DEFINE_PUT\(\s*' + name + r'\s*,[^)]*\)\s*\{(.*?)\n\}', SERIALIZERS, re.S)
+    if not m and not name.startswith('K'):
+        m = re.search(r'SERIALIZE_DEFINE_PUT\(\s*K' + name + r'\s*,[^)]*\)\s*\{(.*?)\n\}',
+                      SERIALIZERS, re.S)
+    if not m and name.startswith('K'):
+        m = re.search(r'SERIALIZE_DEFINE_PUT\(\s*' + name[1:] + r'\s*,[^)]*\)\s*\{(.*?)\n\}',
+                      SERIALIZERS, re.S)
     if not m:
         return None
     body = resolve(strip_comments(m.group(1)), FLAG_TABLE)

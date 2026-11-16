@@ -2,6 +2,7 @@
 #
 #   make            build the server, the tools and the test runner
 #   make test       build and run the full test suite
+#   make check      verify the packet layouts against the 2014 sources + the database schema
 #   make clean
 #
 # The Visual Studio solution is authoritative for the Windows target; this Makefile exists so the
@@ -36,7 +37,7 @@ SERVER_OBJ := $(patsubst %.cpp,$(OBJ)/%.o,$(SERVER_SRC))
 TOOL_SRC   := $(wildcard tools_src/*.cpp)
 TOOL_OBJ   := $(patsubst %.cpp,$(OBJ)/%.o,$(TOOL_SRC))
 
-.PHONY: all server tests tools test clean dirs gen check
+.PHONY: all server tests tools test clean dirs gen check verify
 
 all: dirs server tests tools
 
@@ -87,7 +88,11 @@ gen:
 	python3 tools/gen_stat_table.py $(RESOURCES)/StatTable.lua
 
 # Formats the database tool check: init a scratch database and verify it.
+# The packet guard rail: every reimplemented layout must still match the 2014 serializers, and the
+# comparator itself is proven to catch a broken layout before its verdict is trusted.
 check: tools
+	python3 tools/verify_packets.py --self-test
+	python3 tools/verify_packets.py
 	rm -rf $(BUILD)/checkdb && mkdir -p $(BUILD)/checkdb
 	$(BIN)/knc_dbtool --db $(BUILD)/checkdb/knc.db init
 	$(BIN)/knc_dbtool --db $(BUILD)/checkdb/knc.db check

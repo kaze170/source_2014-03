@@ -282,6 +282,18 @@ wstring expirationDate; byte expandedSocketNum }` (32 bytes empty).
 declares `unsigned char`, and a sealed item stores `>= 100`, so declaring it `char` would let a value
 read back negative. `m_iGoldTicketKeyUID` (`SERV_GOLD_TICKET`) is resolved off and is not sent.
 
+### 6.4 Structures that are defined but not sent
+
+`kproto` also carries the packets this server does not answer yet, because the header would otherwise
+misrepresent the protocol; `tools/verify_packets.py` checks them exactly like the ones above:
+
+| type | wire | why it is not sent |
+| ---- | ---- | ------------------ |
+| `KPacketOK` | `int ok` | the ack body of several packets, including the one below |
+| `KNetAddress` | `wstring ip`, `u16 port` | no handler uses an address payload yet |
+| `KChannelSimpleInfo` | `int channelId`, `int maxUser`, `int currentUser` | only the *old* `EGS_GET_CHANNEL_LIST_ACK` shape (`SERV_CHANNEL_LIST_RENEWAL` off); this build uses `KChannelInfo` |
+| `KEGS_CHECK_CHANNEL_CHANGE_REQ` | `int channelId`, answered by a bare `KPacketOK` | the 2014 game server only answered it from `S_FIELD_MAP`, i.e. after a character entered a field - that part of the game is not simulated |
+
 ## 7. Reply codes
 
 From `Common/NetError_def.h` (an enum starting at `NET_OK = 0`, so the numbers below are its exact
