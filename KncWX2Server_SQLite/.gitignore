@@ -1,0 +1,18 @@
+# Build output (build/linux holds objects, binaries and scratch databases). The Visual Studio
+# project files in build/vcxproj are checked in, so `build/` cannot be ignored wholesale.
+build/linux/
+build/*.db
+build/*.db-wal
+build/*.db-shm
+
+# Runtime database
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.user
+.vs/

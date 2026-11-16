@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{C1A10000-0000-4000-8000-00000000A001}</ProjectGuid>
+    <RootNamespace>kncserver</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='Release'">true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)out\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(ProjectName)\$(Configuration)\</IntDir>
+    <TargetName>kncserver</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <WarningLevel>Level4</WarningLevel>
+      <AdditionalIncludeDirectories>..\..\include;..\..\third_party\zlib;..\..\third_party\sqlite;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <ConformanceMode>true</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\server\main.cpp" />
+    <ClCompile Include="..\..\src\kcore\IniFile.cpp" />
+    <ClCompile Include="..\..\src\kcore\Log.cpp" />
+    <ClCompile Include="..\..\src\kcore\SerBuffer.cpp" />
+    <ClCompile Include="..\..\src\kcore\Serialize.cpp" />
+    <ClCompile Include="..\..\src\kcore\Text.cpp" />
+    <ClCompile Include="..\..\src\kcore\UhcTable.cpp" />
+    <ClCompile Include="..\..\src\kdb\Database.cpp" />
+    <ClCompile Include="..\..\src\kdb\RepositoriesAccount.cpp" />
+    <ClCompile Include="..\..\src\kdb\RepositoriesSocial.cpp" />
+    <ClCompile Include="..\..\src\kdb\RepositoriesTopology.cpp" />
+    <ClCompile Include="..\..\src\kdb\RepositoriesUnits.cpp" />
+    <ClCompile Include="..\..\src\kdb\Schema.cpp" />
+    <ClCompile Include="..\..\src\kdb\SchemaSql.gen.cpp" />
+    <ClCompile Include="..\..\src\kgame\Character.cpp" />
+    <ClCompile Include="..\..\src\kgame\ExpTable.cpp" />
+    <ClCompile Include="..\..\src\kgame\ExpTableData.gen.cpp" />
+    <ClCompile Include="..\..\src\kgame\Rules.cpp" />
+    <ClCompile Include="..\..\src\kgame\StatTable.cpp" />
+    <ClCompile Include="..\..\src\kgame\StatTableData.gen.cpp" />
+    <ClCompile Include="..\..\src\knet\Listener.cpp" />
+    <ClCompile Include="..\..\src\knet\Reactor.cpp" />
+    <ClCompile Include="..\..\src\knet\Session.cpp" />
+    <ClCompile Include="..\..\src\knet\Socket.cpp" />
+    <ClCompile Include="..\..\src\kproto\Event.cpp" />
+    <ClCompile Include="..\..\src\kproto\EventIdName.gen.cpp" />
+    <ClCompile Include="..\..\src\kproto\Packet.cpp" />
+    <ClCompile Include="..\..\src\ksec\Des.cpp" />
+    <ClCompile Include="..\..\src\ksec\Md5.cpp" />
+    <ClCompile Include="..\..\src\ksec\SecureBuffer.cpp" />
+    <ClCompile Include="..\..\src\kserver\ChannelService.cpp" />
+    <ClCompile Include="..\..\src\kserver\Config.cpp" />
+    <ClCompile Include="..\..\src\kserver\LoginService.cpp" />
+    <ClCompile Include="..\..\src\kserver\Server.cpp" />
+    <ClCompile Include="..\..\src\kserver\ServerSession.cpp" />
+    <ClCompile Include="..\..\third_party\zlib\adler32.c" />
+    <ClCompile Include="..\..\third_party\zlib\compress.c" />
+    <ClCompile Include="..\..\third_party\zlib\crc32.c" />
+    <ClCompile Include="..\..\third_party\zlib\deflate.c" />
+    <ClCompile Include="..\..\third_party\zlib\inffast.c" />
+    <ClCompile Include="..\..\third_party\zlib\inflate.c" />
+    <ClCompile Include="..\..\third_party\zlib\inftrees.c" />
+    <ClCompile Include="..\..\third_party\zlib\trees.c" />
+    <ClCompile Include="..\..\third_party\zlib\uncompr.c" />
+    <ClCompile Include="..\..\third_party\zlib\zutil.c" />
+    <ClCompile Include="..\..\third_party\sqlite\sqlite3.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\include\kcore\ByteOrder.h" />
+    <ClInclude Include="..\..\include\kcore\IniFile.h" />
+    <ClInclude Include="..\..\include\kcore\Log.h" />
+    <ClInclude Include="..\..\include\kcore\SerBuffer.h" />
+    <ClInclude Include="..\..\include\kcore\Serialize.h" />
+    <ClInclude Include="..\..\include\kcore\Text.h" />
+    <ClInclude Include="..\..\include\kcore\Types.h" />
+    <ClInclude Include="..\..\include\kdb\Database.h" />
+    <ClInclude Include="..\..\include\kdb\Repositories.h" />
+    <ClInclude Include="..\..\include\kdb\Schema.h" />
+    <ClInclude Include="..\..\include\kgame\Character.h" />
+    <ClInclude Include="..\..\include\kgame\ExpTable.h" />
+    <ClInclude Include="..\..\include\kgame\Rules.h" />
+    <ClInclude Include="..\..\include\kgame\StatTable.h" />
+    <ClInclude Include="..\..\include\knet\Listener.h" />
+    <ClInclude Include="..\..\include\knet\Reactor.h" />
+    <ClInclude Include="..\..\include\knet\Session.h" />
+    <ClInclude Include="..\..\include\knet\Socket.h" />
+    <ClInclude Include="..\..\include\kproto\Event.h" />
+    <ClInclude Include="..\..\include\kproto\EventId.gen.h" />
+    <ClInclude Include="..\..\include\kproto\EventId.h" />
+    <ClInclude Include="..\..\include\kproto\FeatureFlags.gen.h" />
+    <ClInclude Include="..\..\include\kproto\LoginPackets.h" />
+    <ClInclude Include="..\..\include\kproto\Packet.h" />
+    <ClInclude Include="..\..\include\kproto\UnitPackets.h" />
+    <ClInclude Include="..\..\include\ksec\Des.h" />
+    <ClInclude Include="..\..\include\ksec\Md5.h" />
+    <ClInclude Include="..\..\include\ksec\SecureBuffer.h" />
+    <ClInclude Include="..\..\include\kserver\AccountSession.h" />
+    <ClInclude Include="..\..\include\kserver\ChannelService.h" />
+    <ClInclude Include="..\..\include\kserver\Config.h" />
+    <ClInclude Include="..\..\include\kserver\LoginService.h" />
+    <ClInclude Include="..\..\include\kserver\Server.h" />
+    <ClInclude Include="..\..\include\kserver\ServerSession.h" />
+    <ClInclude Include="..\..\tests\TestFramework.h" />
+    <ClInclude Include="..\..\third_party\zlib\zlib.h" />
+    <ClInclude Include="..\..\third_party\zlib\zconf.h" />
+    <ClInclude Include="..\..\third_party\sqlite\sqlite3.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
