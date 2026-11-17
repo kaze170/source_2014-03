@@ -494,6 +494,12 @@ bool ChannelService::handleInventory(AccountSession& state, LoginResponder& resp
                     *slots[attribute.index] = static_cast<char>(attribute.type);
                 }
             }
+            // KNOWN DEVIATION (see docs/porting.md): KItemInfo's two socket vectors are lists of
+            // *option ids* with independent lengths - GSGameDBThread.cpp:9258-9265 and :9189-9197
+            // load them from two separate 5-slot arrays and truncate trailing zeroes on their own -
+            // while our ItemSockets row is (SocketType, SocketValue), a stat kind plus its amount.
+            // Mapping the pair onto the two vectors is not the 2014 encoding; fixing it needs the
+            // option id stored in the schema, not a different mapping here.
             for (const auto& socket : item.sockets) {
                 wire.itemInfo.itemSocket.push_back(socket.value);
                 wire.itemInfo.randomSocket.push_back(socket.type);

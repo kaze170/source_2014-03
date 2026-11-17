@@ -250,6 +250,33 @@ therefore reports -1. The same holds for `m_bIsGameBang` (false) and for the P2P
 `m_usPort`, which the original fills from the UDP echo listener via `SetP2PIP` - the rewrite has no
 such listener, so they stay empty and the field is documented rather than faked.
 
+### Known deviation: item socket ids on the wire
+
+`KItemInfo` carries two socket vectors, `m_vecItemSocket` and `m_vecRandomSocket`. Both are lists of
+**option ids**, not (type, value) pairs: the loader truncates trailing zeroes from two separate
+5-slot `int` arrays (`GSGameDBThread.cpp:9258-9265` under `SERV_BATTLE_FIELD_BOSS`, `:9189-9197` for
+the random ones) and `XSLItemManager.cpp:1890-1892` feeds both vectors to the same
+`GetAndAddStatRelationLevel()`. Each vector has its own length, and either can be empty.
+
+The rewrite's `ItemSockets` table models a socket as `(SocketType, SocketValue)` - a stat kind and
+its amount - because that is what `Character::equipmentStat()` needs to add the bonus
+(`Character.cpp:192-203`). It is therefore **not** the 2014 encoding, and `toUnitInfo`'s inventory
+notice maps the two columns straight onto the two wire vectors, which is wrong for a client that
+reads them as option ids. Fixing it properly means storing the option id alongside the stat pair in
+the schema and in `ItemRecord`; that is a schema change, not a mapping tweak, so it is recorded here
+instead of being guessed at.
+
+### Known deviation: spirit maximum
+
+The select ack sets `m_iSpiritMax = SiKSpiritTable()->GetMaxSpirit()` (`GSUserFunction.cpp:4750`),
+which reads `MAX_SPIRIT` out of `SpiritTable.lua`. That script is not in this tree - only the
+`GameServer.exe` builds are - so the rewrite reports 0 for `spiritMax`/`spirit` rather than
+inventing a number. Note the open question this leaves: when `SERV_BATTLE_FIELD_SYSTEM` is defined
+(as it is, `ServerDefine.h:2768`), the same function keeps spirit in `KUserSpiritManager`
+(`:4102 m_kUserSpiritManager.Clear()`, `:3990 GetSpiritMax()`), so the level-1 line above may not be
+what the shipping build actually sent. Resolving it needs either the missing script or a decision
+about which of the two paths the 2014 deployment used.
+
 ### Two things the 2014 server set handlers do that look like bugs
 
 `EGS_GET_SERVER_SET_DATA_REQ` (`GSUserSession.cpp:2086`) classifies the load with the absolute
