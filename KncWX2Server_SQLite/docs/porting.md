@@ -188,7 +188,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 114 tests, ~2 s
+make test                                  # 115 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -236,6 +236,19 @@ against `defaultStatTable().getUnitStat(class, level)`.
 (`:4041`) initialises it, the room code overwrites it on entry (`:11828-12054`), and the select path
 never touches it. Copying `m_kStat` into it would tell a freshly selected character it is already in
 a fight.
+
+### Two KUnitInfo fields the client is told to ignore
+
+`m_nStraightVictories` is zeroed by the server on both paths that hand a `KUnitInfo` to the client -
+the unit list (`GSUserGameCommon.cpp:226`) and the select ack (`GSUserFunction.cpp:4715`) - right
+after the row arrives from the DB. The column still exists, but echoing it changes what the client
+shows, so `toUnitInfo` writes 0.
+
+`m_iPcBangType` is only assigned on the `GetUnitInfo` path (`:4004`); the list and the select ack
+leave the value `KUnitInfo::Init()` gave it, which is **-1**, not 0. A character outside a PC bang
+therefore reports -1. The same holds for `m_bIsGameBang` (false) and for the P2P `m_wstrIP`/
+`m_usPort`, which the original fills from the UDP echo listener via `SetP2PIP` - the rewrite has no
+such listener, so they stay empty and the field is documented rather than faked.
 
 ### Two things the 2014 server set handlers do that look like bugs
 

@@ -744,6 +744,14 @@ KTEST(Channel, theUnitListStatsAreTheStatTableRow) {
     KCHECK_EQ(unit.gameStat.defPhysic, 0);
     KCHECK_EQ(unit.gameStat.defMagic, 0);
 
+    // Fields the 2014 select path leaves at their KUnitInfo::Init() defaults. pcBangType is -1 there
+    // (not 0), isGameBang is false, and the P2P ip/port stay empty because the rewrite has no UDP
+    // echo listener to learn them from (CommonPacket.h Init(), GSUserFunction.cpp:4716-4718).
+    KCHECK_EQ(unit.pcBangType, -1);
+    KCHECK(!unit.isGameBang);
+    KCHECK(unit.ip.empty());
+    KCHECK_EQ(unit.port, static_cast<USHORT>(0));
+
     // Equipping something must not move it: items are not part of this packet.
     std::int64_t itemUid = 0;
     KCHECK(f.repos().inventory.addItem(uid, 100001, kStEquip, 0, 1, &itemUid));
@@ -757,6 +765,46 @@ KTEST(Channel, theUnitListStatsAreTheStatTableRow) {
 }
 
 // --------------------------------------------------------------------------- access control
+// The 2014 server zeroes KUnitInfo::m_nStraightVictories on both paths that build the packet for
+// the client - the unit list (GSUserGameCommon.cpp:226) and the select ack (GSUserFunction.cpp:4715)
+// - after the row arrives from the DB. A non-zero column must therefore not reach the wire.
+KTEST(Channel, straightVictoriesAreNotReportedEvenWhenTheColumnIsSet) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Laby");
+    KCHECK(uid > 0);
+
+    db::UnitRecord record;
+    KCHECK(f.repos().units.load(uid, &record));
+    record.straightWins = 7;
+    KCHECK(f.repos().units.save(record));
+
+    Event event = f.makeEvent(EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_REQ);
+    f.service->handle(f.session, responder, event);
+    MyUnitAndInventoryInfoListAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.unitInfo.size(), std::size_t(1));
+    KCHECK_EQ(ack.unitInfo.front().straightVictories, 0);
+
+    // Selecting keeps the number zero as well: the answer is only an error code, but the session
+    // now holds the struct built by the same code, so re-reading the list must still say 0.
+    SelectUnitReq select;
+    select.unitUid = uid;
+    responder.clear();
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+    SelectUnitAck selectAck;
+    KCHECK(responder.last(selectAck));
+    KCHECK_EQ(selectAck.ok, static_cast<int>(kNetOk));
+
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    MyUnitAndInventoryInfoListAck again;
+    KCHECK(responder.last(again));
+    KCHECK_EQ(again.unitInfo.size(), std::size_t(1));
+    KCHECK_EQ(again.unitInfo.front().straightVictories, 0);
+}
+
 KTEST(Channel, unauthenticatedRequestsGetNoReply) {
     Fixture f;
     f.session.authenticated = false;

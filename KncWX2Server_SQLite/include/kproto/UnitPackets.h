@@ -395,7 +395,10 @@ struct UnitInfo {
     int spiritMax = 0;
     int spirit = 0;
     bool isGameBang = false;
-    int pcBangType = 0;  // SERV_PC_BANG_TYPE
+    // SERV_PC_BANG_TYPE. KUnitInfo::Init() sets this to -1, not 0, and only GetUnitInfo
+    // (GSUserFunction.cpp:4004) assigns GetPcBangType(); the unit list and the select ack leave it
+    // alone, so a character outside a PC bang reports -1.
+    int pcBangType = -1;
 
     int titleId = 0;  // SERV_TITLE_DATA_SIZE (int, not short)
     UserGuildInfo guildInfo;  // GUILD_TEST

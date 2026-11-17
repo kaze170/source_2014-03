@@ -103,7 +103,11 @@ UnitInfo ChannelService::toUnitInfo(const db::UnitRecord& unit) const {
     info.csPoint = unit.csp;
     info.maxCsPoint = unit.maxCsp;
     info.csPointEndDate = toWide(unit.cspEndDate);
-    info.straightVictories = unit.straightWins;
+    // Straight victories are not reported here: the 2014 server zeroes the field on both paths
+    // that build KUnitInfo for the client - the unit list (GSUserGameCommon.cpp:226) and the select
+    // ack (GSUserFunction.cpp:4715) - right after the packet comes back from the DB. Whatever the
+    // column holds, the client is told 0, so echoing it would change what the client displays.
+    info.straightVictories = 0;
 
     // KUnitInfo carries the class/level row of StatTable. GSUserFunction.cpp:4742-4747 adds
     // GetUnitStat( class, level ) to a packet loaded straight from the database, so equipment is
