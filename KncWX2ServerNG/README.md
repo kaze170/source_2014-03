@@ -27,10 +27,12 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 | `knc.proto.framing` | TCP 長度前綴切包 | 通過 |
 | `knc.proto.event_ids` | 3386 個事件 ID | 兩種獨立方法交叉驗證 |
 | `knc.proto.event` | `KEvent` / `KPerformerInfo` | 通過 |
+| `knc.proto.packet_io` | `Codec<T>`：C++ 型別 ↔ 線路格式的唯一對應表 | 通過 |
+| `knc.proto.packets` | 1953 個封包結構體、7537 個欄位 | 兩種獨立方法交叉驗證 |
 
-**4 個測試套件、2347 項檢查、0 失敗。**
+**5 個測試套件、2395 項檢查、0 失敗。**
 
-另外還有四組**差分交叉驗證**（`tools/crosscheck/`），用別人的實作來檢查我的：
+另外還有五組**差分交叉驗證**（`tools/crosscheck/`），用別人的實作來檢查我的：
 
 | 腳本 | 對照組 | 結果 |
 |---|---|---|
@@ -38,8 +40,9 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 | `check_des.sh` | `pyDes`（獨立純 Python DES） | 600 筆比對，0 不符 |
 | `check_envelope.sh` | 依原始碼另寫的 Python 信封參考實作 | 200 個封包，逐位元組相同 |
 | `check_event_ids.sh` | 真正的 C++ 前處理器展開原版標頭 | 3386 列，0 不符 |
+| `check_packets.sh` | 真正的 C++ **編譯器**跑原版序列化巨集 | 1953 型別 / 7537 欄位，0 不符 |
 
-尚未開始：1740 個封包結構體、遊戲邏輯、SQLite 資料層、IOCP 網路層。
+尚未開始：遊戲邏輯、SQLite 資料層、IOCP 網路層。
 詳見本頁最後的「後續工作」。
 
 ---
@@ -106,15 +109,22 @@ KncWX2ServerNG/
 │       ├── framing.cppm       TCP 長度前綴
 │       ├── event_ids.cppm     3386 個事件 ID
 │       ├── event_ids.inc      產生檔，勿手改
-│       └── event.cppm         KEvent / KPerformerInfo
+│       ├── event.cppm         KEvent / KPerformerInfo
+│       ├── packet_io.cppm     Codec<T>：型別 ↔ 線路格式
+│       ├── packets.cppm       1953 個封包結構體
+│       └── packets/*.inc      產生檔，勿手改
 ├── tests/
 │   ├── run_tests.sh
 │   ├── test_util.hpp          無相依的極簡斷言框架
 │   ├── test_crypto.cpp        DES / MD5 / HMAC 已知答案測試
 │   ├── test_serializer.cpp    線路格式位元組級固定
 │   ├── test_proto.cpp         信封 / 切包 / 事件
-│   └── test_event_ids.cpp     事件 ID 表結構不變量
-├── tools/gen_event_ids.py     從原版標頭產生 event_ids.inc
+│   ├── test_event_ids.cpp     事件 ID 表結構不變量
+│   └── test_packets.cpp       封包位元組級固定 + 往返
+├── tools/
+│   ├── gen_event_ids.py       從原版標頭產生 event_ids.inc
+│   ├── gen_packets.py         從原版標頭產生 packets/*.inc
+│   └── crosscheck/            五組差分交叉驗證腳本
 └── third_party/
     ├── sqlite/                SQLite 3.54.1 amalgamation
     └── zlib/                  zlib 1.3.1
@@ -151,26 +161,21 @@ ICV 改成定時比較、長度為 0 的 TCP 封包不再讓接收迴圈無限�
 
 依建議順序：
 
-1. **封包結構體（1740 個）。**
-   `DECL_PACKET(id)` 會產生 `struct K<EventID>`，欄位順序由 `.cpp` 裡的
-   `SERIALIZE_DEFINE_PUT/GET` 巨集決定，而 `PUT` 的順序永遠等於 `GET`。
-   可以機械化抽取，建議比照 `event_ids.inc` 的做法：產生 + 交叉驗證。
-   區域旗標（TW/HK）影響的是**欄位有無**，不是 ID 編號。
-
-2. **錄一份原版客戶端的握手封包來重播。**
+1. **錄一份原版客戶端的握手封包來重播。**
    目前的信封對著原始碼和公開密碼學向量是逐位元組正確的，
+   封包結構也由兩條獨立路徑驗證過，
    但唯一能真正閉環的證據是拿真實客戶端的封包跑一次。
-   這是最值得做的下一個驗證。
+   這是目前最大的缺口，也是最值得做的下一個驗證。
 
-3. **SQLite 資料層。**
+2. **SQLite 資料層。**
    原版九種 DB worker thread（Account / Game / Log / Event / SMS / Billing /
    NXWeb / Relay / ChatLog）全部收斂到一個 SQLite 連線池。
    schema 來自 `Database/` 專案。
 
-4. **IOCP 網路層 + session 管理。**
+3. **IOCP 網路層 + session 管理。**
    `FrameReader` 與 `SecureChannel` 已經是 session 層需要的全部協定狀態。
 
-5. **路由模型收斂。**
+4. **路由模型收斂。**
    `ePerformerID = SC_<server> | PC_<performer>`。單一行程下，
    `KncSend()` 的「跨伺服器」分支只剩下面向客戶端的 proxy 那一條。
 

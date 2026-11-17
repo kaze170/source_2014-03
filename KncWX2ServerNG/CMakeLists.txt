@@ -105,6 +105,8 @@ set(KNCNG_MODULE_SOURCES
   src/proto/framing.cppm
   src/proto/event_ids.cppm
   src/proto/event.cppm
+  src/proto/packet_io.cppm
+  src/proto/packets.cppm
 )
 
 add_library(knc_core STATIC)
@@ -140,7 +142,8 @@ endif()
 # lets the suite run on toolchains without module support.
 if(KNCNG_BUILD_TESTS)
   enable_testing()
-  foreach(suite IN ITEMS test_crypto test_serializer test_proto test_event_ids)
+  foreach(suite IN ITEMS test_crypto test_serializer test_proto test_event_ids
+                         test_packets)
     add_executable(${suite} tests/${suite}.cpp)
     target_compile_features(${suite} PRIVATE cxx_std_20)
     target_compile_definitions(${suite} PRIVATE KNC_CLASSIC=1)

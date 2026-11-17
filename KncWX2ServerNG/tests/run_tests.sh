@@ -58,7 +58,7 @@ if (( needs_zlib )); then
 fi
 
 # --- test binaries ----------------------------------------------------------
-TESTS=(test_crypto test_serializer test_proto test_event_ids)
+TESTS=(test_crypto test_serializer test_proto test_event_ids test_packets)
 
 echo ">> compiling tests (-DKNC_CLASSIC)"
 pids=()

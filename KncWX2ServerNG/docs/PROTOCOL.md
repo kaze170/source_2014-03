@@ -388,9 +388,36 @@ or only ever echoes the value back.
 | 8 | ciphertext length not checked against the block size | rejected | fed straight into `ProcessData` otherwise. |
 | 9 | global `KSADatabase` map + `CRITICAL_SECTION` per packet, entries never erased | SA lives in the session | pure lock contention, plus an unbounded leak. |
 | 10 | any event id from a client is dispatched | `is_client_originable()` rejects ids > 1324 at the edge | a crafted client could inject server-to-server events (party, guild, DB replies). The legacy guard existed only under `SERV_KEVENT_FROM`. |
+| 11 | `KEGIANT_BILLING_CONSUME_ACK` and `KELOG_ITEM_TRADE_ERROR_NOT` have `SERIALIZE_DEFINE_GET` bodies that call `PUT` | the reader reads the fields the writer wrote | see below. |
 
 Deviation 10 is the only one a *malicious* client can notice. Nothing an honest
 client does is affected.
+
+### Deviation 11 in detail
+
+`PUT(x)` expands to `ks.Put(obj.x)` and `GET(x)` to `ks.Get(obj.x)`. In a
+`SERIALIZE_DEFINE_GET` body `obj` is a non-const reference, so writing `PUT`
+where `GET` was meant still compiles. At run time the "reader" writes into the
+serializer and consumes nothing from the stream, and the destination object
+keeps its default-constructed value.
+
+Two bodies in `Common/OnlyGlobal/Packet/ServerPacket_Global.cpp` do this:
+
+| packet | damage |
+|---|---|
+| `KEGIANT_BILLING_CONSUME_ACK` | all six fields; the packet was effectively write-only |
+| `KELOG_ITEM_TRADE_ERROR_NOT` | the trailing `m_wsrtRegDate` only; its bytes were left unconsumed |
+
+Both are server-internal (Giant billing, log DB) and never reach a game
+client, and the rewrite is a single process with no legacy peer on the far
+end, so the `PUT` body is taken as the authoritative wire format and a correct
+reader is generated from it.
+
+These two are an allowlist in `tools/gen_packets.py`
+(`KNOWN_GET_BODY_DEFECTS`), not a general rule: any *other* packet whose PUT
+and GET disagree is a hard error that stops generation. The allowlist is also
+checked for staleness, so an entry that stops being needed fails the build
+rather than rotting.
 
 ### Not changed, though it is tempting
 
@@ -401,3 +428,58 @@ client does is affected.
 * **The `wchar_t` byte-order exception stays.** Obviously.
 * **Padding is still the predictable `01 02 03 ...` series.** RFC 2406 specifies
   it, and the client validates it.
+
+## 9. Packet layouts
+
+The 1953 serialisable structs of the TW/HK build are not written by hand. They
+are generated from the original headers by `tools/gen_packets.py` into
+`src/proto/packets/*.inc`, and exposed as `knc.proto.packets`.
+
+Two things decide a layout, and they live in different files:
+
+* **order** - the `SERIALIZE_DEFINE_PUT` body in `Common/*Packet.cpp`. This is
+  the wire order, and it is not always the member declaration order.
+* **types** - the struct body in `Common/*Packet.h`.
+
+Both are shot through with regional `#ifdef`s (742 macros are live for TW/HK),
+so the generator runs the real C preprocessor rather than trying to evaluate
+them itself.
+
+| | TW/HK |
+|---|---|
+| serialisable types | 1953 |
+| serialised fields | 7537 |
+| from `Common/*Packet.cpp` | 1743 |
+| from `Common/OnlyGlobal/Packet/*_Global.cpp` | 210 |
+| legacy types defined across *all* regions | 2410 |
+| PUT/GET field-order disagreements | 2, both listed above |
+| `PUTARRAY`/`GETARRAY` uses | 0 - the macros are dead |
+
+`OnlyGlobal/Packet/*_Global.cpp` are separate translation units that nothing
+`#include`s. Missing them costs 210 types and, worse, gives the wrong
+definition of `KBillProductInfo`: the copy in `CommonPacket.cpp` sits behind
+`#ifndef SERV_GLOBAL_BILLING` and is dead for this region.
+
+### Type mapping
+
+| legacy | generated | note |
+|---|---|---|
+| `char`, `BYTE`, `UCHAR`, `u_char`, `byte`, `UINT8` | `char` / `std::uint8_t` | 1 raw byte |
+| `bool` | `bool` | writes 1/0, reads `== 1` |
+| `short`, `USHORT`, `u_short` | `std::int16_t` / `std::uint16_t` | 2 bytes BE |
+| `int`, `UINT`, `DWORD`, `u_int`, `UINT32`, `unsigned long` | `std::int32_t` / `std::uint32_t` | 4 bytes BE |
+| `__int64`, `INT64`, `UidType`, `__time64_t` | `std::int64_t` | 8 bytes BE |
+| `float`, `double` | `float`, `double` | IEEE-754 BE |
+| `std::string` | `std::string` | DWORD byte count + raw |
+| `std::wstring` | `std::u16string` | DWORD **byte** count + UTF-16**LE** units |
+| `std::vector/list/deque/set/map` | same | DWORD count + elements |
+| `T m_a[N]` | `std::array<T, N>` | **no count** - element by element |
+
+`unsigned long` deserves its own line. The protocol is Win32/LLP64, where
+`long` is 4 bytes. A literal port on an LP64 host would widen every `DWORD` to
+8 bytes and silently double the field. `tests/test_packets.cpp` pins this.
+
+Fixed C arrays are the one shape that is *not* length-prefixed: the legacy
+`PUT` body names each index explicitly, so the elements go out bare.
+`Codec<std::array<...>>` is deliberately a `static_assert` failure so that
+hand-written code cannot accidentally frame one as a container.

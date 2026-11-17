@@ -56,8 +56,9 @@ Pins behaviour against published vectors and literal byte strings.
 | ESP envelope | round-trip at every payload length 0..24; every single-bit flip of a sealed frame must be rejected | pass |
 | framing | byte-at-a-time delivery, multi-frame reads, every malformed length | pass |
 | event ids | structural invariants over all 3386 rows | pass |
+| packet layouts | hand-written byte vectors for the login handshake; container, fixed-array and nested-struct shapes; the two repaired `GET` bodies | pass |
 
-Totals: **4 suites, 2347 checks, 0 failures.**
+Totals: **5 suites, 2395 checks, 0 failures.**
 
 ### Layer 2 — differential cross-checks (`tools/crosscheck/`)
 
@@ -71,8 +72,10 @@ else's implementation**, on hundreds of random inputs.
 | `check_des.sh` | DES-CBC, encrypt and decrypt | `pyDes` (independent pure-Python DES) | 600 comparisons, 0 mismatches |
 | `check_envelope.sh` | the **complete** `KSecureBuffer` frame | a Python reference written from the legacy C++ sources | 200 frames, 0 mismatches |
 | `check_event_ids.sh` | all 3386 event ids | a real C++ preprocessor on the original headers | 3386 rows, 0 mismatches |
+| `check_packets.sh` | all 1953 packet layouts — every field, type and position | a real C++ **compiler** running the original serialization macros | 1953 types / 7537 fields, 0 mismatches |
 
-`check_envelope.sh` is the most valuable of the four. DES can be right and
+`check_envelope.sh` and `check_packets.sh` are the two that earn their keep.
+DES can be right and HMAC can be right while the composition is still wrong. DES can be right and
 HMAC can be right while the composition is still wrong — ICV computed over the
 wrong span, sequence number in the wrong byte order, padding counted from the
 wrong base. Its Python reference is transcribed directly from
@@ -86,6 +89,7 @@ test_crypto      41 checks
 test_serializer  51 checks
 test_proto     2219 checks
 test_event_ids   36 checks
+test_packets     48 checks
 ```
 
 Run them with:
@@ -111,6 +115,7 @@ PYTHON=.venv/bin/python tools/crosscheck/check_md5.sh
 PYTHON=.venv/bin/python tools/crosscheck/check_des.sh
 PYTHON=.venv/bin/python tools/crosscheck/check_envelope.sh
 PYTHON=.venv/bin/python tools/crosscheck/check_event_ids.sh
+LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_packets.sh
 ```
 
 ## Cross-verification of the event-id table
@@ -157,6 +162,80 @@ The compiler route needs two mechanical fixups, both audited:
 `tests/test_event_ids.cpp` then re-asserts the structural invariants
 (index == value, unique names, band boundaries, 17 anchor values, the five
 `EGS_GOOD_JOB_n_REQ` placeholders at 21..25) at build time.
+
+## Cross-verification of the packet table
+
+Same problem as the event ids, one order of magnitude larger: 1953 structs,
+7537 fields, and a field in the wrong place is a server that connects, logs
+in, and then misreads everything.
+
+`tools/gen_packets.py` builds the table by running the **C preprocessor** over
+the legacy sources with marker macros and parsing the marked-up text with
+regular expressions. That resolves the regional `#ifdef`s correctly by
+construction, but the regexes are mine, and a subtly wrong regex produces a
+subtly wrong table that every test written against it will happily confirm.
+
+`tools/crosscheck/check_packets.sh` therefore never looks at text. It compiles
+the original, unmodified
+
+```
+Common/{Common,Client,Server}Packet.cpp
+Common/OnlyGlobal/Packet/{Common,Client,Server}Packet_Global.cpp
+```
+
+with the original `PUT` / `GET` / `DECL_DATA` / `SERIALIZE_DEFINE_*` macros,
+copied verbatim out of `KNCSDK/Include/Serializer/`. The only substitution is
+the `KSerializer` those macros call:
+
+```cpp
+struct KSerializer {
+    std::vector<std::string>* log;
+    template <typename T> bool Put(const T&) { rec<T>(); return true; }
+    template <typename T> bool Get(T&)       { rec<T>(); return true; }
+    template <typename T> void rec() { log->push_back(demangle(typeid(T).name())); }
+};
+```
+
+Field **order** then comes from a real C++ compiler walking the real
+`return PUT(a) && PUT(b) && ...;` chains, and field **types** come from that
+compiler's own overload resolution. No regex, no text parsing, no
+hand-maintained type table — nothing shared with the generator except the list
+of type names, which is separately checked against a raw grep of the sources.
+
+Result: **1953 types, 7537 field signatures, 0 mismatches.**
+
+### Reconciling the two type vocabularies
+
+The generator emits the fixed-width name it chose; the compiler reports the
+platform spelling it resolved. Both sides are reduced to wire-equivalence
+classes first. Every collapse is deliberate:
+
+| collapse | why it is safe |
+|---|---|
+| signedness dropped for integers | the serializer emits identical bytes for `int` and `unsigned int` of equal width, so it cannot be a wire difference |
+| `long` / `unsigned long` → **32** bits | the protocol is Win32/LLP64 where `long` is 4 bytes; an LP64 host reports 8, and believing it would silently double the field. This is the one place the check overrides the compiler. |
+| `wchar_t` and `char16_t` strings → one code | `wchar_t` is 2 bytes on Win32 and 4 on Linux; the serializer writes one UTF-16 code unit per character either way |
+| allocator, comparator, and the `const` on a map key erased | C++ bookkeeping with no wire presence |
+
+Width and kind are never collapsed, so a 2-vs-4 byte or an int-vs-float
+mix-up still fails the diff.
+
+### What the generator refuses to do
+
+Generation aborts rather than guessing. All of these are hard errors:
+
+* a `SERIALIZE_DEFINE_PUT` with no matching `GET`, or vice versa
+* `PUT` order ≠ `GET` order, outside the two-entry allowlist
+* a field in a `PUT` body with no matching struct member
+* a member type that maps to no known codec
+* a fixed array serialised as anything other than indices `0..N-1`
+* a cycle in the struct dependency graph
+* an allowlist entry that is no longer needed
+
+Each of the first four fired at least once during development and caught a
+real problem — including the missing `OnlyGlobal/Packet/*_Global.cpp`
+translation units (210 types, and the wrong `KBillProductInfo`) and the two
+`GET` bodies that call `PUT`.
 
 ## Known-answer vectors, not self-consistency
 
@@ -223,17 +302,17 @@ out to make a test pass.
 
 Honest list:
 
-* No packet-struct bodies yet — 1740 `K<EventID>` structs across
-  `ClientPacket.h` (776), `ServerPacket.h` (887) and `CommonPacket.h` (77)
-  remain to be extracted. Their field order is mechanically recoverable from
-  the `SERIALIZE_DEFINE_PUT/GET` macro bodies, and `PUT` order always equals
-  `GET` order.
-* No live client has been connected. The envelope is byte-exact against the
-  sources and against published crypto vectors, but an end-to-end capture
-  replay is the only thing that closes the loop. A recorded handshake from the
-  original client, replayed through `FrameReader` + `SecureChannel`, would be
-  the strongest possible test and is the recommended next verification step.
-* `UDP_CAN_NOT_SEND_USER_KICK` under TW/HK is still unconfirmed, which leaves
-  one trailing `bool` in `KEGS_CONNECT_ACK` undecided.
-* The region selection (`SERV_COUNTRY_TW` → `SERV_COUNTRY_TWHK`) affects packet
-  *fields*, not ids. Those field-level differences are not yet encoded anywhere.
+* **No live client has been connected.** This is now the single largest gap.
+  The envelope is byte-exact against the sources and against published crypto
+  vectors, and the packet layouts are confirmed by two independent
+  extractions, but an end-to-end capture replay is the only thing that closes
+  the loop. A recorded handshake from the original client, replayed through
+  `FrameReader` + `SecureChannel`, remains the strongest possible test and is
+  the recommended next step.
+* The packet table is generated for **TW/HK only**. Other regions are a
+  `--region` flag away, but nothing has been generated or checked for them.
+* The two repaired `GET` bodies (PROTOCOL.md deviation 11) are repaired on the
+  assumption that both packets stay server-internal. If either is ever sent to
+  a client, the repair becomes a wire break.
+* Packet layouts are verified for *structure*, not *semantics*. Nothing here
+  says what `m_iOK == 1` means, or which fields a given handler must populate.
