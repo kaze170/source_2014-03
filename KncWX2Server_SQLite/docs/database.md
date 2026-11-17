@@ -35,6 +35,9 @@ On `close()` the database checkpoints with `TRUNCATE`, so a clean shutdown leave
 | `005_progress.sql` | `Rankings`, `EventRewards`, `WorldMissions`, `WorldMissionProgress`, `FieldBossState`, `MatchMakingQueue`, `Statistics`, `Scripts`, `LogEntries`, `SmsQueue` |
 | `006_socket_options.sql` | `ItemSocketOptions` (independent normal and random wire option IDs) |
 
+Schema scripts, legacy table repair, and version markers are committed together; a failure rolls
+the upgrade back. A database with a newer `user_version` is rejected without modification.
+
 `tools/gen_schema.py` embeds every script into `src/kdb/SchemaSql.gen.cpp`, so the binary is
 self-contained - run `make gen` after editing any `.sql` file.
 

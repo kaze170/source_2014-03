@@ -37,61 +37,81 @@ std::string hashAccountPassword(const std::string& loginId, const std::string& p
 
 MigrationResult applySchema(Database& db) {
     MigrationResult result;
+    if (!db.isOpen()) {
+        result.error = "database not open";
+        return result;
+    }
+    // Acquire the writer lock before reading the version so another process cannot migrate
+    // between the version check and our first schema change.
+    Database::Transaction tx(db);
+    if (!tx.active()) {
+        result.error = "could not begin schema transaction: " + db.lastError();
+        return result;
+    }
     result.fromVersion = db.userVersion();
+    result.toVersion = result.fromVersion;
+    if (result.fromVersion > kSchemaVersion) {
+        result.error = "database schema version " + std::to_string(result.fromVersion) +
+                       " is newer than supported version " + std::to_string(kSchemaVersion);
+        return result;
+    }
 
+    // DDL, legacy table repair, and both version markers must commit together. Otherwise a
+    // failed migration can leave a partially upgraded database or claim an upgrade succeeded.
     for (const auto& [name, sql] : embeddedScripts()) {
         std::string error;
         if (!db.exec(sql, &error)) {
             result.error = name + ": " + error;
+            result.appliedScripts.clear();
             KLOG(LogLevel::kError, "db") << "schema script failed: " << result.error;
             return result;
         }
         result.appliedScripts.push_back(name);
     }
 
-    // A database created before the AccountOptions key was fixed still has AccountUID as the
-    // primary key, which silently allows only one option per account. CREATE TABLE IF NOT EXISTS
-    // will not touch it, so rebuild the table once, keeping the existing rows.
-    {
-        const Rows keys = db.query(
-            "SELECT COUNT(*) AS n FROM pragma_table_info('AccountOptions') WHERE pk > 0;", {});
-        const bool singleColumnKey = !keys.empty() && keys.front().at("n").asInt() == 1;
-        if (singleColumnKey) {
-            std::string error;
-            const bool ok = db.transaction([&] {
-                if (!db.exec("ALTER TABLE AccountOptions RENAME TO AccountOptions_old;", &error)) return false;
-                if (!db.exec(
-                        "CREATE TABLE AccountOptions ("
-                        "AccountUID INTEGER NOT NULL REFERENCES Accounts(AccountUID) ON DELETE CASCADE,"
-                        "OptKey TEXT NOT NULL,"
-                        "OptValue INTEGER NOT NULL DEFAULT 0,"
-                        "PRIMARY KEY (AccountUID, OptKey));",
-                        &error)) {
-                    return false;
-                }
-                if (!db.exec(
-                        "INSERT OR REPLACE INTO AccountOptions(AccountUID, OptKey, OptValue) "
-                        "SELECT AccountUID, OptKey, OptValue FROM AccountOptions_old;",
-                        &error)) {
-                    return false;
-                }
-                return db.exec("DROP TABLE AccountOptions_old;", &error);
-            });
-            if (!ok) {
-                result.error = "AccountOptions migration: " + error;
-                KLOG(LogLevel::kError, "db") << result.error;
-                return result;
-            }
-            result.appliedScripts.push_back("migrate:AccountOptions-key");
+    // The original single-column AccountOptions key allowed only one option per account.
+    const Rows keys = db.query(
+        "SELECT COUNT(*) AS n FROM pragma_table_info('AccountOptions') WHERE pk > 0;", {});
+    const bool singleColumnKey = !keys.empty() && keys.front().at("n").asInt() == 1;
+    if (singleColumnKey) {
+        std::string error;
+        const bool ok = db.exec("ALTER TABLE AccountOptions RENAME TO AccountOptions_old;", &error) &&
+            db.exec("CREATE TABLE AccountOptions ("
+                    "AccountUID INTEGER NOT NULL REFERENCES Accounts(AccountUID) ON DELETE CASCADE,"
+                    "OptKey TEXT NOT NULL,"
+                    "OptValue INTEGER NOT NULL DEFAULT 0,"
+                    "PRIMARY KEY (AccountUID, OptKey));", &error) &&
+            db.exec("INSERT OR REPLACE INTO AccountOptions(AccountUID, OptKey, OptValue) "
+                    "SELECT AccountUID, OptKey, OptValue FROM AccountOptions_old;", &error) &&
+            db.exec("DROP TABLE AccountOptions_old;", &error);
+        if (!ok) {
+            result.error = "AccountOptions migration: " + error;
+            result.appliedScripts.clear();
+            KLOG(LogLevel::kError, "db") << result.error;
+            return result;
         }
+        result.appliedScripts.push_back("migrate:AccountOptions-key");
     }
 
-    if (result.fromVersion != kSchemaVersion) {
+    if (result.fromVersion < kSchemaVersion) {
         std::string error;
-        db.run("INSERT OR REPLACE INTO SchemaInfo(Version, AppliedAt, Description) VALUES(?,?,?);",
-               {Value(kSchemaVersion), Value(nowMs()), Value("schema " + std::to_string(kSchemaVersion))},
-               &error);
-        db.setUserVersion(kSchemaVersion);
+        if (!db.run("INSERT OR REPLACE INTO SchemaInfo(Version, AppliedAt, Description) VALUES(?,?,?);",
+                    {Value(kSchemaVersion), Value(nowMs()), Value("schema " + std::to_string(kSchemaVersion))},
+                    &error)) {
+            result.error = "SchemaInfo update: " + error;
+            result.appliedScripts.clear();
+            return result;
+        }
+        if (!db.setUserVersion(kSchemaVersion)) {
+            result.error = "user_version update: " + db.lastError();
+            result.appliedScripts.clear();
+            return result;
+        }
+    }
+    if (!tx.commit()) {
+        result.error = "schema commit: " + db.lastError();
+        result.appliedScripts.clear();
+        return result;
     }
 
     result.toVersion = db.userVersion();

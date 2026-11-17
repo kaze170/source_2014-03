@@ -6,7 +6,7 @@ fifteen ODBC DSNs, built from the original wire format so a 2014 client can stil
 ```
 kncserver    one process replacing LoginServer + ChannelServer + GameServer (+ Center/Global)
 knc_dbtool   create / migrate / inspect the database
-knc_tests    the test runner (120 tests, no external dependencies)
+knc_tests    the test runner (123 tests, no external dependencies)
 ```
 
 ## Why this exists
@@ -54,7 +54,7 @@ Linux / MinGW (what CI and this sandbox use):
 
 ```sh
 make -j2          # server, tools, tests -> build/linux/bin
-make test         # runs the 120 tests
+make test         # runs the 123 tests
 make check        # packet layouts vs the 2014 sources, then knc_dbtool init + integrity check
 make gen          # regenerate the .gen.* sources from ../KncWX2Server
 ```

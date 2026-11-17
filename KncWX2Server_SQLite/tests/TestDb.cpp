@@ -59,6 +59,50 @@ KTEST(Db, schemaIsCreatedAndVersioned) {
     KCHECK(temp.db.integrityCheck(&report));
 }
 
+KTEST(Db, newerSchemaIsRejectedWithoutChanges) {
+    TempDb temp;
+    const auto future = kSchemaVersion + 1;
+    KCHECK(temp.db.setUserVersion(future));
+    KCHECK(temp.db.exec("DROP TABLE ItemSocketOptions;"));
+    const auto result = applySchema(temp.db);
+    KCHECK(!result.ok);
+    KCHECK_EQ(result.fromVersion, future);
+    KCHECK_EQ(result.toVersion, future);
+    KCHECK(!result.error.empty());
+    KCHECK_EQ(temp.db.userVersion(), future);
+    KCHECK_EQ(temp.db.queryValue("SELECT count(*) FROM sqlite_master WHERE type='table' "
+                                "AND name='ItemSocketOptions';").asInt(), std::int64_t(0));
+}
+
+KTEST(Db, failedVersionRecordRollsBackSchemaMigration) {
+    TempDb temp;
+    KCHECK(temp.db.exec("DROP TABLE ItemSocketOptions;"));
+    KCHECK(temp.db.exec("DELETE FROM SchemaInfo WHERE Version=2;"));
+    KCHECK(temp.db.setUserVersion(1));
+    KCHECK(temp.db.exec("CREATE TRIGGER reject_schema_version BEFORE INSERT ON SchemaInfo "
+                        "BEGIN SELECT RAISE(ABORT, 'injected schema failure'); END;"));
+    const auto result = applySchema(temp.db);
+    KCHECK(!result.ok);
+    KCHECK(result.appliedScripts.empty());
+    KCHECK(result.error.find("injected schema failure") != std::string::npos);
+    KCHECK_EQ(temp.db.userVersion(), std::int64_t(1));
+    KCHECK_EQ(temp.db.queryValue("SELECT count(*) FROM sqlite_master WHERE type='table' "
+                                "AND name='ItemSocketOptions';").asInt(), std::int64_t(0));
+    KCHECK(temp.db.exec("DROP TRIGGER reject_schema_version;"));
+    const auto retry = applySchema(temp.db);
+    KCHECK(retry.ok);
+    KCHECK_EQ(temp.db.userVersion(), kSchemaVersion);
+    KCHECK_EQ(temp.db.queryValue("SELECT count(*) FROM sqlite_master WHERE type='table' "
+                                "AND name='ItemSocketOptions';").asInt(), std::int64_t(1));
+}
+
+KTEST(Db, schemaRequiresAnOpenDatabase) {
+    Database db;
+    const auto result = applySchema(db);
+    KCHECK(!result.ok);
+    KCHECK(!result.error.empty());
+}
+
 KTEST(Db, seedAccountsAndTopology) {
     TempDb temp;
     std::string err;

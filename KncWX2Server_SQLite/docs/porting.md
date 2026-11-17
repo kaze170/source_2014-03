@@ -188,7 +188,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 120 tests, ~2 s
+make test                                  # 123 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
