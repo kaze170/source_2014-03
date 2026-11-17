@@ -9,7 +9,7 @@ The point is to break correlated errors. A test I wrote can share a
 misunderstanding with the code I wrote. A disagreement with `pyDes` or Python's
 `hashlib` cannot.
 
-All six are reproducible from a clean checkout. They are not part of
+All seven are reproducible from a clean checkout. They are not part of
 `run_tests.sh` because they need Python packages and the original legacy tree.
 
 | script | checks | against |
@@ -20,6 +20,7 @@ All six are reproducible from a clean checkout. They are not part of
 | `check_envelope.sh` | the complete `KSecureBuffer` frame | a Python re-implementation written from the legacy C++ sources |
 | `check_packets.sh` | all 1953 packet layouts, every field and position | a real C++ **compiler** running the original serialization macros |
 | `check_event_packets.sh` | all 3386 event→packet bindings | `static_assert` on the original headers + the **symbol tables** of the legacy code built for 10 regions |
+| `check_handshake.sh` | a whole login conversation, both directions | an independent Python implementation of the **entire stack** |
 
 ## Requirements
 
@@ -43,6 +44,7 @@ tools/crosscheck/check_envelope.sh
 tools/crosscheck/check_event_ids.sh      # needs the legacy tree
 tools/crosscheck/check_packets.sh        # needs the legacy tree, ~30s
 tools/crosscheck/check_event_packets.sh  # needs the legacy tree, ~90s
+tools/crosscheck/check_handshake.sh      # no legacy tree needed, ~10s
 ```
 
 ## Last recorded results
@@ -54,6 +56,7 @@ DES-CBC   :  600 comparisons, 0 mismatches
 envelope  :  200 frames,      0 mismatches
 packets   : 1953 types / 7537 field signatures, 0 mismatches
 bindings  : 3386 event->packet bindings, 0 mismatches
+handshake : 26 checks, both directions byte-identical
 ```
 
 ## Why `check_envelope.sh` and `check_packets.sh` matter most
@@ -86,6 +89,16 @@ call `PUT`.
 `check_event_packets.sh` found a fourth: 41 event ids whose payload is a bare
 `typedef __int64 KEGS_ACCEPT_FRIEND_REQ;` rather than a struct. They have no
 `DECL_PACKET` anywhere and had been filed under "no payload".
+
+`check_handshake.sh` found a fifth, smaller one: an empty `KEvent` is 30
+bytes, not the 26 the docs claimed. The test vector had always been right;
+only the prose was wrong, and it took two implementations agreeing on the
+bytes to make the stray number visible.
+
+`check_handshake.sh` is also the only one whose falsifiability is recorded:
+five mutations of its reference implementation (sequence endianness, length
+prefix, SPI endianness, ICV length, skipped decompression) are each detected.
+A check nobody has seen fail is a check nobody has tested.
 
 Both scripts are worth reading for how their *first* versions were wrong —
 each docstring records it. Testing "does the name compile" instead of "can

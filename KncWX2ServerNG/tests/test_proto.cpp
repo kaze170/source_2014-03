@@ -634,7 +634,7 @@ void test_framing(knctest::Suite& s) {
 // ===========================================================================
 
 void test_event(knctest::Suite& s) {
-    s.run("an empty event has the documented 26-byte layout", [] {
+    s.run("an empty event has the documented 30-byte layout", [] {
         Event e{Ev::E_HEART_BEAT};
         KNC_CHECK_EQ_BYTES(e.serialize(),
                            from_hex("00000000"            // performer id 0
@@ -644,6 +644,9 @@ void test_event(knctest::Suite& s) {
                                     "0000"                // event id 0
                                     "00000000"),          // empty SerBuffer
                            "empty event layout");
+        // 26 bytes of header + 4 for the empty SerBuffer. The header size is
+        // not the event size; saying so was a documentation bug for a while.
+        KNC_CHECK_EQ(e.serialize().size(), std::size_t{30}, "empty event is 30 bytes");
     });
 
     s.run("uids serialize ascending after a BE count", [] {

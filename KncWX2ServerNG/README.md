@@ -30,10 +30,11 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 | `knc.proto.packet_io` | `Codec<T>`：C++ 型別 ↔ 線路格式的唯一對應表 | 通過 |
 | `knc.proto.packets` | 1953 個封包結構體、7537 個欄位 | 兩種獨立方法交叉驗證 |
 | `knc.proto.dispatch` | 3386 個事件 ID ↔ 封包結構體的綁定表 | 兩種獨立方法交叉驗證 |
+| `knc.proto.session` | 整條收送路徑：分幀 → 信封 → 事件 → 封包 | 兩種獨立方法交叉驗證 |
 
-**6 個測試套件、2475 項檢查、0 失敗。**
+**7 個測試套件、2575 項檢查、0 失敗。**
 
-另外還有六組**差分交叉驗證**（`tools/crosscheck/`），用別人的實作來檢查我的：
+另外還有七組**差分交叉驗證**（`tools/crosscheck/`），用別人的實作來檢查我的：
 
 | 腳本 | 對照組 | 結果 |
 |---|---|---|
@@ -43,6 +44,7 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 | `check_event_ids.sh` | 真正的 C++ 前處理器展開原版標頭 | 3386 列，0 不符 |
 | `check_packets.sh` | 真正的 C++ **編譯器**跑原版序列化巨集 | 1953 型別 / 7537 欄位，0 不符 |
 | `check_event_packets.sh` | `static_assert` 原版標頭 + 十個區域編譯後的**符號表** | 3386 筆綁定，0 不符 |
+| `check_handshake.sh` | 另外用 Python 獨立實作**整個協定堆疊** | 完整登入對話，雙向逐位元組相同 |
 
 尚未開始：遊戲邏輯、SQLite 資料層、IOCP 網路層。
 詳見本頁最後的「後續工作」。
@@ -116,7 +118,8 @@ KncWX2ServerNG/
 │       ├── packets.cppm       1953 個封包結構體
 │       ├── packets/*.inc      產生檔，勿手改
 │       ├── dispatch.cppm      事件 ID ↔ 封包綁定
-│       └── event_packets.inc  產生檔，勿手改
+│       ├── event_packets.inc  產生檔，勿手改
+│       └── session.cppm       整條收送路徑與交握
 ├── tests/
 │   ├── run_tests.sh
 │   ├── test_util.hpp          無相依的極簡斷言框架
@@ -125,12 +128,13 @@ KncWX2ServerNG/
 │   ├── test_proto.cpp         信封 / 切包 / 事件
 │   ├── test_event_ids.cpp     事件 ID 表結構不變量
 │   ├── test_packets.cpp       封包位元組級固定 + 往返
-│   └── test_dispatch.cpp      事件 ID ↔ 封包綁定
+│   ├── test_dispatch.cpp      事件 ID ↔ 封包綁定
+│   └── test_session.cpp       交握與整條收送路徑
 ├── tools/
 │   ├── gen_event_ids.py       從原版標頭產生 event_ids.inc
 │   ├── gen_packets.py         從原版標頭產生 packets/*.inc
 │   ├── gen_event_packets.py   產生事件 ID ↔ 封包綁定表
-│   └── crosscheck/            六組差分交叉驗證腳本
+│   └── crosscheck/            七組差分交叉驗證腳本
 └── third_party/
     ├── sqlite/                SQLite 3.54.1 amalgamation
     └── zlib/                  zlib 1.3.1

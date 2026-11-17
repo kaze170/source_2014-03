@@ -58,8 +58,9 @@ Pins behaviour against published vectors and literal byte strings.
 | event ids | structural invariants over all 3386 rows | pass |
 | packet layouts | hand-written byte vectors for the login handshake; container, fixed-array and nested-struct shapes; the two repaired `GET` bodies | pass |
 | event→packet binding | table internally consistent with `event_ids.inc`; bucket counts; scalar payloads; the client-edge filter only ever narrows | pass |
+| session | a two-party login conversation driven byte by byte; handshake ordering; what the edge refuses; liveness | pass |
 
-Totals: **6 suites, 2475 checks, 0 failures.**
+Totals: **7 suites, 2575 checks, 0 failures.**
 
 ### Layer 2 — differential cross-checks (`tools/crosscheck/`)
 
@@ -75,6 +76,7 @@ else's implementation**, on hundreds of random inputs.
 | `check_event_ids.sh` | all 3386 event ids | a real C++ preprocessor on the original headers | 3386 rows, 0 mismatches |
 | `check_packets.sh` | all 1953 packet layouts — every field, type and position | a real C++ **compiler** running the original serialization macros | 1953 types / 7537 fields, 0 mismatches |
 | `check_event_packets.sh` | all 3386 event→packet bindings | `static_assert` against the original headers, plus the **symbol tables** of the legacy code compiled for 10 regions | 3386 bindings, 0 mismatches |
+| `check_handshake.sh` | a whole login conversation, both directions | an independent Python implementation of the entire stack | 26 checks, 0 mismatches |
 
 `check_envelope.sh` and `check_packets.sh` are the two that earn their keep.
 DES can be right and HMAC can be right while the composition is still wrong. DES can be right and
@@ -89,10 +91,11 @@ as a whole.
 ```
 test_crypto      41 checks
 test_serializer  51 checks
-test_proto     2219 checks
+test_proto     2220 checks
 test_event_ids   36 checks
 test_packets     48 checks
 test_dispatch    80 checks
+test_session     99 checks
 ```
 
 Run them with:
@@ -120,6 +123,7 @@ PYTHON=.venv/bin/python tools/crosscheck/check_envelope.sh
 PYTHON=.venv/bin/python tools/crosscheck/check_event_ids.sh
 LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_packets.sh
 LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_event_packets.sh
+tools/crosscheck/check_handshake.sh        # no legacy tree needed
 ```
 
 ## Cross-verification of the event-id table
@@ -294,6 +298,58 @@ A third, smaller lesson: the first negative probe produced a **2.4 GB**
 diagnostic log from 1268 undeclared names. Probes that work by provoking
 compiler errors do not scale.
 
+## Cross-verification of the composed path
+
+Each layer above is checked on its own. Nothing so far checks the ORDER they
+run in, and that order is where a rewrite actually breaks: seal before
+switching keys, verify before decrypting, decompress after reading the event,
+count the length prefix inside the length. Get any of those backwards and
+every single-layer test still passes.
+
+`tools/crosscheck/check_handshake.sh` runs a complete login conversation past
+an independent implementation — ~250 lines of Python written from the legacy
+C++ (`KSerializer`, `KSerBuffer`, `KEvent`, `KSecureBuffer`, the
+`KSkSession` receive loop), sharing nothing with `knc.proto` but pyDes and
+hashlib. Both directions:
+
+* **forward** — Python records the conversation; the C++ `Session` replays it
+  and reports what it saw. Catches anything the C++ cannot *read*.
+* **backward** — the C++ emits the same conversation with the same keys and
+  IVs; Python requires byte equality. Catches anything the C++ *writes*
+  differently.
+
+The conversation covers the key exchange under SPI 0, a struct packet, a
+heartbeat, a bare-scalar payload (event 599, `typedef __int64`), and a
+zlib-compressed payload. The compressed frame is compared after inflation
+rather than byte for byte: two zlib builds may make different, equally valid
+choices, and demanding identical compressed bytes would be testing zlib
+rather than the protocol.
+
+### It is falsifiable
+
+A check nobody has seen fail is a check nobody has tested. Five mutations of
+the reference implementation, each detected:
+
+| mutation | caught by |
+|---|---|
+| sequence number big-endian | emitted `hello` differs |
+| length prefix excludes itself | framing fails on both sides |
+| SPI big-endian in the header | emitted `req` differs |
+| ICV truncated to 9 bytes | authentication fails |
+| skip `UnCompress()` | inflated payload differs |
+
+### What it found
+
+That an empty `KEvent` is **30 bytes**, not 26. The byte vector pinned in
+`test_proto.cpp` had been correct since it was written; its label and
+PROTOCOL.md both said 26, which is the size of the event *header* without the
+4-byte empty `SerBuffer`. Two independent implementations agreeing on the
+bytes is what made the stray number visible.
+
+It cannot catch a mistake both implementations make from the same misreading
+of the source. Only a capture from a real client can, and that remains the
+largest gap.
+
 ## Known-answer vectors, not self-consistency
 
 A round-trip test proves only that a module agrees with itself; it cannot catch
@@ -372,6 +428,9 @@ Honest list:
 * The binding table says which struct carries an event, not **who may send
   it**, nor which handler should run. `is_acceptable_from_client()` is a band
   and region filter, not an authorisation model.
+* `Session` composes the protocol layers; it is not a server. There is no
+  socket, no IOCP replacement, no event queue, no handler dispatch, and no
+  concurrency. Those are the next thing to build on top of it.
 * The two repaired `GET` bodies (PROTOCOL.md deviation 11) are repaired on the
   assumption that both packets stay server-internal. If either is ever sent to
   a client, the repair becomes a wire break.

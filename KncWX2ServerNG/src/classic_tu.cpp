@@ -20,6 +20,7 @@
 #include "proto/packet_io.cppm"
 #include "proto/packets.cppm"
 #include "proto/dispatch.cppm"
+#include "proto/session.cppm"
 #include "proto/security.cppm"
 #include "proto/serbuffer.cppm"
 #include "proto/serializer.cppm"

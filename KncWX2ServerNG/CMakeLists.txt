@@ -108,6 +108,7 @@ set(KNCNG_MODULE_SOURCES
   src/proto/packet_io.cppm
   src/proto/packets.cppm
   src/proto/dispatch.cppm
+  src/proto/session.cppm
 )
 
 add_library(knc_core STATIC)
@@ -144,7 +145,7 @@ endif()
 if(KNCNG_BUILD_TESTS)
   enable_testing()
   foreach(suite IN ITEMS test_crypto test_serializer test_proto test_event_ids
-                         test_packets test_dispatch)
+                         test_packets test_dispatch test_session)
     add_executable(${suite} tests/${suite}.cpp)
     target_compile_features(${suite} PRIVATE cxx_std_20)
     target_compile_definitions(${suite} PRIVATE KNC_CLASSIC=1)

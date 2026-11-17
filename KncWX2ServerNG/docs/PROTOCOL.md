@@ -311,9 +311,13 @@ KSerBuffer payload
   serialized.
 * The receiver calls `m_kbuff.UnCompress()` unconditionally after reading.
 
-An event with no payload is exactly 26 bytes.
+An event with no payload is exactly **30 bytes**: 26 bytes of header plus the
+4-byte empty `KSerBuffer`. (This document said 26 until the handshake
+cross-check compared the number against an actual frame - the byte vector in
+the test had been right all along, only the prose counted the header and
+stopped.)
 
-*Verified by:* "an empty event has the documented 26-byte layout",
+*Verified by:* "an empty event has the documented 30-byte layout",
 "uids serialize ascending after a BE count", "trace push/pop follows
 GetLastSenderUID".
 
@@ -538,3 +542,82 @@ client-originable band**: a client can name them and nothing here can parse
 them. `is_client_originable()` lets those through because it only checks the
 band; `is_acceptable_from_client()` refuses them. Inbound client traffic
 should use the latter.
+
+## 11. The session: how the layers compose
+
+Everything above describes one layer. The order they run in is its own
+contract, and it is the part a rewrite gets wrong while every individual
+layer stays correct. `knc.proto.session` is that order, mirroring
+`KSkSession::OnRecvCompleted` (`Socket/Session.cpp:13`) feeding
+`KSession::OnRecvCompleted` (`:601`).
+
+### Ingress
+
+```
+socket bytes
+  -> FrameReader        split on the USHORT length prefix, which COUNTS ITSELF
+  -> SecureChannel      verify the ICV, THEN decrypt, THEN strip the padding
+  -> Event::deserialize read the KEvent out of the plaintext
+  -> payload.decompress AFTER the event is read, not inside SerBuffer
+  -> dispatch           refuse what a client may not send; decode the packet
+```
+
+Four orderings in there are load-bearing:
+
+1. **The length prefix counts itself**, so the body is `declared - 2`. The
+   legacy loop computed that in unsigned arithmetic: a declared length of 0
+   produced a body length of `SIZE_MAX - 1` and advanced the read cursor by
+   zero, so two bytes would spin a receive thread forever. `FrameReader`
+   rejects anything below `kMinFrameSize` before doing arithmetic on it.
+2. **The ICV is verified before decryption**, over the ciphertext, so a
+   forged frame never reaches the cipher.
+3. **The sequence check is skipped while the local SPI is 0.** The bootstrap
+   SA is shared by every connection in the world, so its counter is
+   meaningless (`if( !IsDefaultSPIndex() && bCheckSequenceNum )`).
+4. **Decompression happens after the event is read.** The compression flag
+   belongs to the payload; the event header around it is never compressed.
+
+### The handshake, in order
+
+```
+server                                        client
+  mint {SPI, SA}
+  seal E_ACCEPT_CONNECTION_NOT  --- SPI 0 --->
+  adopt {SPI, SA}                              read SPI + SA, adopt
+                                <-- new SPI -- subsequent traffic
+```
+
+The frame carrying the key is sealed under the key the client already has,
+and the server switches only after sealing. Reverse those two lines and the
+client cannot read the frame that contains the key it needs — a deadlock that
+no unit test of either layer would notice, which is why
+`test_session.cpp` builds a deliberately reversed sender and asserts the
+client rejects it.
+
+The SPI is **little-endian in the frame header and big-endian in the body**
+of that same frame. Not a typo: the header is `memcpy`'d native words, the
+body goes through `KSerializer`, and they disagree.
+
+### What the session layer refuses
+
+| condition | result | why |
+|---|---|---|
+| declared length < 27 or > 32768 | fatal, close | the stream is desynchronised and has no resync marker |
+| ICV mismatch | frame dropped, **stream survives** | one bad frame is not an attack; dropping the peer hands anyone who can inject a packet a free disconnect |
+| more than `PACKET_AUTH_FAIL_DEFAULT` (100) failures | traffic attack | `> limit`, not `>=`, kept exact |
+| `E_HEART_BEAT` | consumed, never dispatched | "heart bit filtering - no queueing" |
+| `E_ACCEPT_CONNECTION_NOT` from a client | refused | otherwise a client picks its own session key |
+| a key exchange offering SPI 0 | refused | it would leave the session on the bootstrap key |
+| event id outside the client band, inbound | refused | `is_acceptable_from_client()` |
+| event id in another region's build, inbound | refused | the 38 ids of §10 |
+
+Liveness mirrors the legacy single tick field, which was updated on *send*
+for the client and on *receive* for the server: a client sends a heartbeat
+after 15 s of its own silence, a server declares a peer dead after 60 s of
+the peer's. The time is passed in rather than read from a clock, so
+`GetTickCount()`'s 49.7-day wrap cannot recur.
+
+*Verified by:* `tests/test_session.cpp` (99 checks) and
+`tools/crosscheck/check_handshake.sh`, which replays a conversation recorded
+by an independent Python implementation of the whole stack and then requires
+the C++ to emit the same bytes.
