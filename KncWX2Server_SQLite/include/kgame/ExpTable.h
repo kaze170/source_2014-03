@@ -33,7 +33,13 @@ public:
 
     int maxLevel() const { return static_cast<int>(entries_.size()); }
 
-    // Level a unit would be at with `exp` total exp (clamped to [1, maxLevel]).
+    // Level a unit would be at with `exp` total exp. The 2014 CheckLevelUp() ends with
+    // "if (GetLimitsLevel() < nResultLevel) nResultLevel = GetLimitsLevel()", and AddLimitsMaxLevel
+    // rejects anything outside 1..80 - so the table is 80 rows but the *playable* ceiling is the
+    // configured limit (GameSysValTable.lua has 65). Forgetting that clamp is invisible until a
+    // unit passes the cap, then the client is told a level it can never reach.
+    int levelForExp(std::int64_t exp, int levelLimit) const;
+    // Same, using the shipped limit (ExpRules::kMaxLevel == 65).
     int levelForExp(std::int64_t exp) const;
     // Cumulative exp required to hold `level` (0 for level 1).
     std::int64_t expToReachLevel(int level) const;

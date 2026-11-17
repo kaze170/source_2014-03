@@ -98,6 +98,25 @@ comparison, so the guard rail cannot rot into a script that always prints "match
 `--sizes` prints the fixed byte count of each), which is the fastest way to answer "what does the 2014
 struct actually contain".
 
+### The level curve has a ceiling that is not the table length
+
+`ExpTable.xls` has 80 rows, but the shipped `GameSysValTable.lua` says
+`GameSysVal:AddLimitsMaxLevel( 65 )`, and `KExpTable::CheckLevelUp` ends with
+
+    if ( static_cast<u_char>( SiKGameSysVal()->GetLimitsLevel() ) < nResultLevel )
+        nResultLevel = static_cast<u_char>( SiKGameSysVal()->GetLimitsLevel() );
+
+so a unit holding the exp for row 80 is level 65, not 80. `ExpTable::levelForExp` therefore takes
+the limit as an argument (`ExpRules::kMaxLevel` by default, and `AddLimitsMaxLevel_LUA` accepts
+1..80 so another deployment can pass its own). The regional `GameSysValTable.lua` files use 67 (EU)
+and 70 (CN/JP/TW), which is why the limit is a parameter rather than a constant inside the table.
+
+`KUnitInfo` is built the same way the original builds it: `GSUserFunction.cpp:4737` recomputes the
+level from the exp total with `CheckLevelUp( 1, m_iEXP )` instead of trusting the stored column, and
+:4738-4739 fill `m_nNowBaseLevelEXP` / `m_nNextBaseLevelEXP` with `GetRequireTotalExpbyLevel` -
+cumulative totals, not the window inside the level. Sending the stored level, or the in-level
+window, both produce a client that disagrees with the server about when the next level starts.
+
 ### The inventory answer: order, empty bags, and "only once"
 
 `EGS_GET_MY_INVENTORY_REQ` looks like a simple list reply but the 2014 handler has three properties
@@ -169,7 +188,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 111 tests, ~2 s
+make test                                  # 112 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 

@@ -6,6 +6,7 @@
 #include "kgame/Character.h"
 #include "kgame/ExpTable.h"
 #include "kgame/Rules.h"
+#include "kgame/Rules.h"
 #include "kgame/StatTable.h"
 
 using namespace knc;
@@ -57,8 +58,17 @@ KTEST(Game, levelFromExpAndLevelUps) {
     KCHECK_EQ(table.levelForExp(1300), 3);
     KCHECK_EQ(table.levelForExp(1999), 3);
     KCHECK_EQ(table.levelForExp(2000), 4);
-    KCHECK_EQ(table.levelForExp(91056800), 80);
-    KCHECK_EQ(table.levelForExp(999999999), 80);
+    // The table has 80 rows, but KExpTable::CheckLevelUp clamps to GetLimitsLevel() and
+    // GameSysValTable.lua sets AddLimitsMaxLevel( 65 ) - so past the cap the answer is 65, not 80.
+    KCHECK_EQ(table.levelForExp(91056800), ExpRules::kMaxLevel);
+    KCHECK_EQ(table.levelForExp(999999999), ExpRules::kMaxLevel);
+    // The clamp is a ceiling, not a rewrite: below it the table decides.
+    KCHECK_EQ(table.levelForExp(table.expToReachLevel(65) - 1), 64);
+    KCHECK_EQ(table.levelForExp(table.expToReachLevel(65)), 65);
+    // Callers that model a different deployment can pass its own limit.
+    KCHECK_EQ(table.levelForExp(91056800, 70), 70);
+    KCHECK_EQ(table.levelForExp(91056800, 80), 80);
+    KCHECK_EQ(table.levelForExp(91056800, 0), 1);  // a nonsensical limit degrades to level 1
 
     // A single large award must cross several levels and keep the remainder.
     const auto result = table.applyExp(1, 0, 2000);
@@ -70,9 +80,9 @@ KTEST(Game, levelFromExpAndLevelUps) {
     KCHECK_EQ(table.expWithinLevel(3, 2000), std::int64_t(700));  // 700 of the 700 needed
     KCHECK_EQ(table.expWithinLevel(4, 2000), std::int64_t(0));
 
-    // At max level the exp keeps accumulating but the level stops.
-    const auto capped = table.applyExp(80, 91056800, 1000);
-    KCHECK_EQ(capped.level, 80);
+    // At the cap the exp keeps accumulating but the level stops.
+    const auto capped = table.applyExp(ExpRules::kMaxLevel, 91056800, 1000);
+    KCHECK_EQ(capped.level, ExpRules::kMaxLevel);
     KCHECK_EQ(capped.levelsGained, 0);
     KCHECK(capped.reachedMax);
 

@@ -15,6 +15,8 @@
 #include "kproto/Event.h"
 #include "kproto/LoginPackets.h"
 #include "kproto/UnitPackets.h"
+#include "kgame/ExpTable.h"
+#include "kgame/Rules.h"
 #include "kserver/ChannelService.h"
 #include "kserver/Config.h"
 
@@ -661,6 +663,46 @@ KTEST(Channel, theRecommendAndShareBankFlagsComeFromTheAccount) {
     KCHECK(responder.last(ack));
     KCHECK(ack.isRecommend);
     KCHECK(ack.sharingBank);
+}
+
+// The stored level is not trusted: the 2014 login path re-derived it from the exp total, and the
+// derivation has to honour the configured ceiling (GameSysValTable.lua: AddLimitsMaxLevel( 65 )),
+// not the 80 rows the spreadsheet happens to hold.
+KTEST(Channel, theUnitListReportsTheLevelTheExpTotalImplies) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Add");
+    KCHECK(uid > 0);
+
+    Event event = f.makeEvent(EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_REQ);
+    f.service->handle(f.session, responder, event);
+    MyUnitAndInventoryInfoListAck before;
+    KCHECK(responder.last(before));
+    KCHECK_EQ(before.unitInfo.size(), std::size_t(1));
+    KCHECK_EQ(static_cast<int>(before.unitInfo.front().level), 1);
+
+    // Enough exp for the last spreadsheet row: the level must stop at the cap.
+    db::UnitRecord record;
+    KCHECK(f.repos().units.load(uid, &record));
+    record.level = 1;
+    record.exp = 91056800;
+    KCHECK(f.repos().units.save(record));
+
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    MyUnitAndInventoryInfoListAck after;
+    KCHECK(responder.last(after));
+    KCHECK_EQ(after.unitInfo.size(), std::size_t(1));
+    KCHECK_EQ(static_cast<int>(after.unitInfo.front().level), game::ExpRules::kMaxLevel);
+    KCHECK_EQ(after.unitInfo.front().exp, 91056800);
+    // m_nNowBaseLevelEXP / m_nNextBaseLevelEXP are cumulative totals (GetRequireTotalExpbyLevel),
+    // not the window inside the level.
+    const game::ExpTable& table = game::defaultExpTable();
+    KCHECK_EQ(after.unitInfo.front().nowBaseLevelExp,
+              static_cast<int>(table.expToReachLevel(game::ExpRules::kMaxLevel)));
+    KCHECK_EQ(after.unitInfo.front().nextBaseLevelExp,
+              static_cast<int>(table.expToReachLevel(game::ExpRules::kMaxLevel + 1)));
+    KCHECK(after.unitInfo.front().nowBaseLevelExp > 0);
 }
 
 // --------------------------------------------------------------------------- access control

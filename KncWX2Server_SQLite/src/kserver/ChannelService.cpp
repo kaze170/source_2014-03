@@ -82,8 +82,14 @@ UnitInfo ChannelService::toUnitInfo(const db::UnitRecord& unit) const {
     info.unitClass = static_cast<char>(unit.unitClass);
     info.nickName = toWide(unit.nickName);
     info.ed = static_cast<int>(unit.ed > 0x7FFFFFFF ? 0x7FFFFFFF : unit.ed);
-    info.level = static_cast<UCHAR>(std::clamp(unit.level, 0, 255));
-    info.exp = static_cast<int>(unit.exp > 0x7FFFFFFF ? 0x7FFFFFFF : unit.exp);
+    // The 2014 server never trusts the stored level when it builds KUnitInfo: it re-derives it from
+    // the exp total (GSUserFunction.cpp:4737, CheckLevelUp( 1, m_iEXP )), which also applies the
+    // configured level cap. A crash between the level and exp writes would otherwise show the
+    // client a stale level forever.
+    const int storedExp = static_cast<int>(unit.exp > 0x7FFFFFFF ? 0x7FFFFFFF : unit.exp);
+    info.level = static_cast<UCHAR>(
+        std::clamp(knc::game::defaultExpTable().levelForExp(storedExp), 0, 255));
+    info.exp = storedExp;
 
     info.officialMatchCnt = unit.officialMatch;
     info.rating = unit.rating;
@@ -109,10 +115,18 @@ UnitInfo ChannelService::toUnitInfo(const db::UnitRecord& unit) const {
     info.stat.defMagic = base.defMagic;
     info.gameStat = info.stat;
 
+    // m_nNowBaseLevelEXP / m_nNextBaseLevelEXP are cumulative totals, not the window inside the
+    // level: GSUserFunction.cpp:4738-4739 fills them with GetRequireTotalExpbyLevel( level ) and
+    // GetRequireTotalExpbyLevel( level + 1 ), using the level it just recomputed.
     const knc::game::ExpTable& exp = knc::game::defaultExpTable();
-    info.nowBaseLevelExp = static_cast<int>(exp.expWithinLevel(unit.level, unit.exp));
-    const std::int64_t next = exp.expToNextLevel(unit.level);
-    info.nextBaseLevelExp = next > 0x7FFFFFFF ? 0x7FFFFFFF : static_cast<int>(next);
+    const int level = static_cast<int>(info.level);
+    const auto clampToInt = [](std::int64_t value) {
+        if (value > 0x7FFFFFFF) return 0x7FFFFFFF;
+        if (value < 0) return 0;
+        return static_cast<int>(value);
+    };
+    info.nowBaseLevelExp = clampToInt(exp.expToReachLevel(level));
+    info.nextBaseLevelExp = clampToInt(exp.expToReachLevel(level + 1));
 
     info.lastPos.mapId = unit.mapId;
     info.lastPos.lastTouchLineIndex = 0;

@@ -2,26 +2,36 @@
 
 #include <algorithm>
 
+#include "kgame/Rules.h"
+
 namespace knc::game {
 
 ExpTable::ExpTable() {
     entries_.assign(expTableData(), expTableData() + expTableSize());
 }
 
-int ExpTable::levelForExp(std::int64_t exp) const {
+int ExpTable::levelForExp(std::int64_t exp, int levelLimit) const {
     if (entries_.empty()) return 1;
-    if (exp <= 0) return entries_.front().level;
+    if (levelLimit < 1) levelLimit = 1;
 
-    // Entries are ordered by level and expToReach is monotonic; the level is the last entry whose
-    // cumulative requirement is <= exp. This is exactly KExpTable::CheckLevelUp's comparison
-    // (nExp < nTotalExp), just resolved with a binary search instead of a map walk.
-    const auto it = std::upper_bound(entries_.begin(), entries_.end(), exp,
-                                     [](std::int64_t value, const ExpEntry& entry) {
-                                         return value < entry.expToReach;
-                                     });
-    if (it == entries_.begin()) return entries_.front().level;
-    return std::prev(it)->level;
+    int level = entries_.front().level;
+    if (exp > 0) {
+        // Entries are ordered by level and expToReach is monotonic; the level is the last entry
+        // whose cumulative requirement is <= exp. This is exactly KExpTable::CheckLevelUp's
+        // comparison (nExp < nTotalExp), just resolved with a binary search instead of a map walk.
+        const auto it = std::upper_bound(entries_.begin(), entries_.end(), exp,
+                                         [](std::int64_t value, const ExpEntry& entry) {
+                                             return value < entry.expToReach;
+                                         });
+        if (it != entries_.begin()) level = std::prev(it)->level;
+    }
+
+    // CheckLevelUp's trailing clamp against GetLimitsLevel().
+    if (level > levelLimit) return levelLimit;
+    return level;
 }
+
+int ExpTable::levelForExp(std::int64_t exp) const { return levelForExp(exp, ExpRules::kMaxLevel); }
 
 std::int64_t ExpTable::expToReachLevel(int level) const {
     if (entries_.empty() || level < 1) return 0;
@@ -54,7 +64,9 @@ ExpTable::ApplyResult ExpTable::applyExp(int level, std::int64_t exp, std::int64
     const int target = levelForExp(result.exp);
     result.levelsGained = std::max(0, target - result.level);
     result.level = target;
-    result.reachedMax = !entries_.empty() && result.level >= entries_.back().level;
+    // "Max" means the playable ceiling, not the last spreadsheet row: past the limit the client
+    // still shows kMaxLevel even though the table has more rows.
+    result.reachedMax = result.level >= std::min(ExpRules::kMaxLevel, entries_.back().level);
     return result;
 }
 
