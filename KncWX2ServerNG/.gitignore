@@ -1,0 +1,19 @@
+# Local build output
+/.build/
+/build/
+/out/
+gcm.cache/
+*.gcm
+*.ifc
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exe
+
+# Visual Studio
+.vs/
+*.user
+*.suo
