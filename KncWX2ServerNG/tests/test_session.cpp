@@ -62,6 +62,11 @@ struct Pair {
     Session client{Role::kClient};
 
     Pair() {
+        // Start both clocks explicitly at zero. Deadlines are measured from
+        // begin(), so a test that skipped this would be measuring from
+        // whenever next() first saw a timestamp.
+        server.begin(0);
+        client.begin(0);
         const Bytes hello = server.accept();
         client.push(view(hello));
         (void)client.next(1);
@@ -332,6 +337,37 @@ void test_liveness() {
     KNC_CHECK(!net.client.key_wait_expired(999999), "a keyed client never gives up");
 }
 
+void test_clocks_start_when_the_session_does() {
+    // Regression. Every deadline is `now - some_past_event` and all of those
+    // start at zero, so a session created when the clock already reads large
+    // - which is what any steady clock gives you - was born 60 seconds
+    // silent and reaped on its first tick. Every unit test here counts from
+    // zero, so none of them saw it; the first real connection died instantly.
+    const std::uint64_t boot = 1'700'000'000'000ULL;  // a plausible steady clock
+
+    Session server{Role::kServer};
+    server.begin(boot);
+    KNC_CHECK(!server.peer_is_zombie(boot),
+              "a session created at a large clock value is not instantly a zombie");
+    KNC_CHECK(!server.peer_is_zombie(boot + 60000), "...nor at 60s exactly");
+    KNC_CHECK(server.peer_is_zombie(boot + 60001), "...but still dies at 60s+1");
+
+    Session client{Role::kClient};
+    client.begin(boot);
+    KNC_CHECK(!client.key_wait_expired(boot + 5000),
+              "the key wait is measured from the session start, not from zero");
+    KNC_CHECK(client.key_wait_expired(boot + 5001), "...and still expires");
+
+    // set_now() on a fresh session starts it, so a caller that only ever
+    // passes real timestamps cannot trip over this.
+    Session implicit{Role::kServer};
+    KNC_CHECK(!implicit.started(), "a session has not started until told");
+    implicit.set_now(boot);
+    KNC_CHECK(implicit.started(), "set_now starts it");
+    KNC_CHECK_EQ(implicit.started_at(), boot, "...at that moment");
+    KNC_CHECK(!implicit.peer_is_zombie(boot + 1000), "and it is alive");
+}
+
 void test_client_edge_filter() {
     Pair net;
 
@@ -549,6 +585,7 @@ int main() {
     suite.run("truncated body is not authentic", test_truncated_body_is_not_authentic);
     suite.run("heartbeat is filtered", test_heartbeat_is_filtered);
     suite.run("liveness", test_liveness);
+    suite.run("clocks start when the session does", test_clocks_start_when_the_session_does);
     suite.run("client edge filter", test_client_edge_filter);
     suite.run("only a server hands out keys", test_only_a_server_hands_out_keys);
     suite.run("bootstrap spi is refused", test_bootstrap_spi_is_refused);

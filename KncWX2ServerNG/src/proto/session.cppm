@@ -205,6 +205,31 @@ public:
         return send(ev);
     }
 
+    // --- outbound queue ----------------------------------------------------
+    //
+    // KSession::SendPacket wrote straight to the socket, which is why the
+    // protocol and the transport were one class. Here a reply is queued and
+    // whoever owns the socket drains it, so a handler can answer without
+    // knowing whether there is a socket at all.
+
+    /// Queue already-framed bytes.
+    void post_bytes(const Bytes& bytes) { append(out_, view(bytes)); }
+
+    /// Seal, frame and queue an event.
+    void post(const Event& ev) { post_bytes(send(ev)); }
+
+    /// Seal, frame and queue the packet bound to `E`.
+    template <Ev E, typename T = PacketOf<E>>
+    void post_packet(const T& packet) {
+        post_bytes(send_packet<E>(packet));
+    }
+
+    [[nodiscard]] bool has_pending_output() const noexcept { return !out_.empty(); }
+    [[nodiscard]] ByteView pending_output() const noexcept { return view(out_); }
+    void consume_output(std::size_t n) {
+        out_.erase(out_.begin(), out_.begin() + static_cast<std::ptrdiff_t>(n));
+    }
+
     /// An empty E_HEART_BEAT: 30 bytes of event before sealing, 58 on the wire.
     [[nodiscard]] Bytes heartbeat() {
         last_heartbeat_sent_ms_ = now_ms_;
@@ -219,10 +244,11 @@ public:
     ///
     /// `now_ms` is supplied by the caller rather than read from a clock, so
     /// that liveness is testable and so the 49.7-day wrap of the legacy
-    /// GetTickCount() cannot recur.
+    /// GetTickCount() cannot recur. Zero means "no opinion, keep the clock
+    /// where it is".
     [[nodiscard]] Inbound next(std::uint64_t now_ms = 0) {
         if (now_ms != 0) {
-            now_ms_ = now_ms;
+            set_now(now_ms);
         }
         Inbound in;
 
@@ -340,7 +366,34 @@ public:
 
     // --- liveness ----------------------------------------------------------
 
-    void set_now(std::uint64_t now_ms) noexcept { now_ms_ = now_ms; }
+    /// Start the clocks.
+    ///
+    /// Every deadline here is `now - some_past_event`, and all of those start
+    /// at zero. A session created when the clock already reads large - which
+    /// is what any steady clock gives you, milliseconds since boot - is
+    /// therefore born 60 seconds silent and reaped on its first tick. The
+    /// unit tests never saw it because they count from zero; the first live
+    /// connection died instantly.
+    void begin(std::uint64_t now_ms) noexcept {
+        started_ = true;
+        started_at_ = now_ms;
+        now_ms_ = now_ms;
+        last_recv_ms_ = now_ms;
+        last_heartbeat_sent_ms_ = now_ms;
+    }
+
+    /// The first call also starts the clocks, so a caller that only ever
+    /// passes a real timestamp cannot trip over the above.
+    void set_now(std::uint64_t now_ms) noexcept {
+        if (!started_) {
+            begin(now_ms);
+            return;
+        }
+        now_ms_ = now_ms;
+    }
+
+    [[nodiscard]] bool started() const noexcept { return started_; }
+    [[nodiscard]] std::uint64_t started_at() const noexcept { return started_at_; }
     [[nodiscard]] std::uint64_t now() const noexcept { return now_ms_; }
     [[nodiscard]] std::uint64_t last_recv() const noexcept { return last_recv_ms_; }
 
@@ -360,8 +413,10 @@ public:
     }
 
     /// Client side: the server never sent a key within SECURE_KEY_WAITING_TIME.
+    /// Measured from begin(), not from zero - see the note there.
     [[nodiscard]] bool key_wait_expired(std::uint64_t now_ms) const noexcept {
-        return role_ == Role::kClient && !keyed_ && now_ms > kSecureKeyWaitMs;
+        return role_ == Role::kClient && !keyed_ &&
+               now_ms - started_at_ > kSecureKeyWaitMs;
     }
 
     // --- abuse counters ----------------------------------------------------
@@ -400,10 +455,13 @@ private:
 
     Role role_;
     FrameReader reader_;
+    Bytes out_;
     SecureChannel channel_;
     bool keyed_ = false;
     std::uint32_t auth_failures_ = 0;
     std::uint32_t auth_fail_limit_ = kDefaultAuthFailLimit;
+    bool started_ = false;
+    std::uint64_t started_at_ = 0;
     std::uint64_t now_ms_ = 0;
     std::uint64_t last_recv_ms_ = 0;
     std::uint64_t last_heartbeat_sent_ms_ = 0;

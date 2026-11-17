@@ -59,8 +59,9 @@ Pins behaviour against published vectors and literal byte strings.
 | packet layouts | hand-written byte vectors for the login handshake; container, fixed-array and nested-struct shapes; the two repaired `GET` bodies | pass |
 | event→packet binding | table internally consistent with `event_ids.inc`; bucket counts; scalar payloads; the client-edge filter only ever narrows | pass |
 | session | a two-party login conversation driven byte by byte; handshake ordering; what the edge refuses; liveness | pass |
+| router / connection | typed handler registration; duplicate and other-region refusal; what closes a connection and what merely counts | pass |
 
-Totals: **7 suites, 2575 checks, 0 failures.**
+Totals: **8 suites, 2635 checks, 0 failures.**
 
 ### Layer 2 — differential cross-checks (`tools/crosscheck/`)
 
@@ -77,6 +78,7 @@ else's implementation**, on hundreds of random inputs.
 | `check_packets.sh` | all 1953 packet layouts — every field, type and position | a real C++ **compiler** running the original serialization macros | 1953 types / 7537 fields, 0 mismatches |
 | `check_event_packets.sh` | all 3386 event→packet bindings | `static_assert` against the original headers, plus the **symbol tables** of the legacy code compiled for 10 regions | 3386 bindings, 0 mismatches |
 | `check_handshake.sh` | a whole login conversation, both directions | an independent Python implementation of the entire stack | 26 checks, 0 mismatches |
+| `check_live.sh` | the **running server**, over a real socket | the same independent implementation, driving a TCP connection | 17 checks, 0 failures |
 
 `check_envelope.sh` and `check_packets.sh` are the two that earn their keep.
 DES can be right and HMAC can be right while the composition is still wrong. DES can be right and
@@ -95,7 +97,8 @@ test_proto     2220 checks
 test_event_ids   36 checks
 test_packets     48 checks
 test_dispatch    80 checks
-test_session     99 checks
+test_session    108 checks
+test_router      51 checks
 ```
 
 Run them with:
@@ -124,6 +127,7 @@ PYTHON=.venv/bin/python tools/crosscheck/check_event_ids.sh
 LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_packets.sh
 LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_event_packets.sh
 tools/crosscheck/check_handshake.sh        # no legacy tree needed
+tools/crosscheck/check_live.sh             # builds and runs the server
 ```
 
 ## Cross-verification of the event-id table
@@ -350,6 +354,47 @@ It cannot catch a mistake both implementations make from the same misreading
 of the source. Only a capture from a real client can, and that remains the
 largest gap.
 
+## Verification against the running server
+
+`check_handshake.sh` moves bytes between two objects in one process.
+`check_live.sh` starts the actual server binary, connects to it over TCP
+with `tools/crosscheck/knc_ref.py`, and logs in.
+
+That is a different question. Everything up to here could pass with a server
+that never flushes its first reply, drops connections it should tolerate, or
+mishandles a short read — none of those are protocol mistakes, and none of
+them are visible without a socket.
+
+What it drives:
+
+| | |
+|---|---|
+| handshake | the key exchange arrives sealed under SPI 0, carrying a non-bootstrap key |
+| login | a matching version gets `NET_OK` and the configured channel id |
+| rejection | a mismatched version gets `ERR_CONNECT_00` |
+| tolerance | a heartbeat, a refused server-band id, an unhandled id and one corrupted ICV all leave the connection up |
+| reassembly | a frame split across two `send()` calls with 150 ms between them |
+| fatality | a zero-length frame closes the connection |
+| concurrency | five clients at once, five distinct SPIs, five logins |
+
+### What it found immediately
+
+Every connection died the moment it was made.
+
+Liveness deadlines are all `now - some_past_event`, and `last_recv_ms_`
+started at zero. Under test that is harmless, because the tests count from
+zero too. Under a real clock — `steady_clock`, milliseconds since boot — a
+new session is born tens of millions of milliseconds "silent" and is reaped
+on its first tick, before the client can say anything.
+
+`Session::begin()` now starts the clocks, `set_now()` starts them on first
+use so a caller passing real timestamps cannot trip over it, and
+`test_session.cpp` pins the case with a plausible boot-time clock value.
+
+This is the clearest argument in this document for running the thing. 2500
+passing checks, two independent implementations agreeing byte for byte, and
+the server was unusable for its first real connection.
+
 ## Known-answer vectors, not self-consistency
 
 A round-trip test proves only that a module agrees with itself; it cannot catch
@@ -428,9 +473,16 @@ Honest list:
 * The binding table says which struct carries an event, not **who may send
   it**, nor which handler should run. `is_acceptable_from_client()` is a band
   and region filter, not an authorisation model.
-* `Session` composes the protocol layers; it is not a server. There is no
-  socket, no IOCP replacement, no event queue, no handler dispatch, and no
-  concurrency. Those are the next thing to build on top of it.
+* The server answers exactly one event, `EGS_CONNECT_REQ`. There is no
+  account verification, no actors, no world, no database. `NetError_def.h`
+  (4060 rows, ten regional variants) has not been generated; the connect
+  path uses three hand-copied constants.
+* `TcpServer` is single-threaded `poll()` on POSIX only. The ship target is
+  MSVC, where an IOCP backend has to replace it — `Connection`, which holds
+  the protocol decisions, is platform-independent and already tested without
+  a socket.
+* Nothing has been load-tested. Five concurrent connections is not a
+  concurrency test.
 * The two repaired `GET` bodies (PROTOCOL.md deviation 11) are repaired on the
   assumption that both packets stay server-internal. If either is ever sent to
   a client, the repair becomes a wire break.

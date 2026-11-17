@@ -59,7 +59,7 @@ fi
 
 # --- test binaries ----------------------------------------------------------
 TESTS=(test_crypto test_serializer test_proto test_event_ids test_packets test_dispatch
-       test_session)
+       test_session test_router)
 
 echo ">> compiling tests (-DKNC_CLASSIC)"
 pids=()

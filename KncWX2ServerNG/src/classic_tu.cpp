@@ -21,6 +21,8 @@
 #include "proto/packets.cppm"
 #include "proto/dispatch.cppm"
 #include "proto/session.cppm"
+#include "app/router.cppm"
+#include "net/server.cppm"
 #include "proto/security.cppm"
 #include "proto/serbuffer.cppm"
 #include "proto/serializer.cppm"

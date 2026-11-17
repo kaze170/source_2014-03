@@ -13,8 +13,12 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 
 ## 現在的狀態
 
-協定核心已完成並通過驗證。這是整個專案風險最高的部分——它是跟客戶端之間
-唯一不能改的契約，一個位元組錯掉，連線會成功、然後每個字串都是亂碼。
+協定核心已完成並通過驗證，**伺服器也跑得起來了**：另外用 Python 獨立
+實作的客戶端可以透過真實 socket 連進來、完成金鑰交握、登入拿到
+`EGS_CONNECT_ACK`。
+
+協定是整個專案風險最高的部分——它是跟客戶端之間唯一不能改的契約，
+一個位元組錯掉，連線會成功、然後每個字串都是亂碼。
 
 | 模組 | 內容 | 狀態 |
 |---|---|---|
@@ -31,10 +35,12 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 | `knc.proto.packets` | 1953 個封包結構體、7537 個欄位 | 兩種獨立方法交叉驗證 |
 | `knc.proto.dispatch` | 3386 個事件 ID ↔ 封包結構體的綁定表 | 兩種獨立方法交叉驗證 |
 | `knc.proto.session` | 整條收送路徑：分幀 → 信封 → 事件 → 封包 | 兩種獨立方法交叉驗證 |
+| `knc.app.router` | 事件 ID → 處理函式；封包型別由綁定表決定 | 通過 |
+| `knc.net.server` | `Connection`（無 socket）＋ `TcpServer`（poll） | 實機連線驗證 |
 
-**7 個測試套件、2575 項檢查、0 失敗。**
+**8 個測試套件、2635 項檢查、0 失敗。**
 
-另外還有七組**差分交叉驗證**（`tools/crosscheck/`），用別人的實作來檢查我的：
+另外還有八組**差分交叉驗證**（`tools/crosscheck/`），用別人的實作來檢查我的：
 
 | 腳本 | 對照組 | 結果 |
 |---|---|---|
@@ -45,6 +51,7 @@ GlobalServer）、約 887k 行、靠 ODBC 連 MSSQL、用 Crypto++ 做封包加�
 | `check_packets.sh` | 真正的 C++ **編譯器**跑原版序列化巨集 | 1953 型別 / 7537 欄位，0 不符 |
 | `check_event_packets.sh` | `static_assert` 原版標頭 + 十個區域編譯後的**符號表** | 3386 筆綁定，0 不符 |
 | `check_handshake.sh` | 另外用 Python 獨立實作**整個協定堆疊** | 完整登入對話，雙向逐位元組相同 |
+| `check_live.sh` | 同一個獨立實作，透過**真實 TCP socket** 當客戶端 | 17 項檢查，實機登入成功 |
 
 尚未開始：遊戲邏輯、SQLite 資料層、IOCP 網路層。
 詳見本頁最後的「後續工作」。
@@ -67,6 +74,23 @@ cmake -S . -B build -DKNCNG_CLASSIC_MODE=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
+
+### 跑起來
+
+```sh
+cmake --build build -j            # 產生 build/kncng_server
+build/kncng_server --port 9800 --version 1.2.3 --channel-id 7
+```
+
+然後用 `tools/crosscheck/knc_ref.py` 連進去——那是依原版 C++ 另外寫的
+客戶端實作，和伺服器沒有共用任何一行程式碼：
+
+```sh
+tools/crosscheck/check_live.sh    # 建置、啟動、登入、17 項檢查
+```
+
+目前伺服器只回答 `EGS_CONNECT_REQ`。交握、心跳、邊界過濾、連線生命週期
+都是完整的；遊戲邏輯、帳號驗證、資料庫都還沒有。
 
 ### 出貨建置（VC++26 / Visual Studio 2026）
 
@@ -120,6 +144,9 @@ KncWX2ServerNG/
 │       ├── dispatch.cppm      事件 ID ↔ 封包綁定
 │       ├── event_packets.inc  產生檔，勿手改
 │       └── session.cppm       整條收送路徑與交握
+│   ├── app/router.cppm        事件 ID → 處理函式
+│   ├── net/server.cppm        Connection + poll() TCP 伺服器
+│   └── main.cpp               伺服器進入點
 ├── tests/
 │   ├── run_tests.sh
 │   ├── test_util.hpp          無相依的極簡斷言框架
@@ -129,7 +156,8 @@ KncWX2ServerNG/
 │   ├── test_event_ids.cpp     事件 ID 表結構不變量
 │   ├── test_packets.cpp       封包位元組級固定 + 往返
 │   ├── test_dispatch.cpp      事件 ID ↔ 封包綁定
-│   └── test_session.cpp       交握與整條收送路徑
+│   ├── test_session.cpp       交握與整條收送路徑
+│   └── test_router.cpp        處理函式表與 Connection
 ├── tools/
 │   ├── gen_event_ids.py       從原版標頭產生 event_ids.inc
 │   ├── gen_packets.py         從原版標頭產生 packets/*.inc
@@ -172,20 +200,23 @@ ICV 改成定時比較、長度為 0 的 TCP 封包不再讓接收迴圈無限�
 依建議順序：
 
 1. **錄一份原版客戶端的握手封包來重播。**
-   目前的信封對著原始碼和公開密碼學向量是逐位元組正確的，
-   封包結構也由兩條獨立路徑驗證過，
-   但唯一能真正閉環的證據是拿真實客戶端的封包跑一次。
-   這是目前最大的缺口，也是最值得做的下一個驗證。
+   信封對著原始碼和公開密碼學向量是逐位元組正確的，封包結構由兩條獨立路徑
+   驗證過，`check_live.sh` 也證明了另一個獨立實作可以真的登入進來。
+   但兩邊都是依同一份原始碼寫的——同一個誤讀會同時通過兩邊。
+   只有真實客戶端的封包能閉環。這仍然是最大的缺口。
 
-2. **SQLite 資料層。**
+2. **`NetError_def.h` 的 4060 個錯誤碼。**
+   和封包表同樣的故事：十個區域變體，目前連線路徑只手抄了三個常數。
+
+3. **帳號驗證（`EGS_VERIFY_ACCOUNT_REQ`）與 SQLite 資料層。**
    原版九種 DB worker thread（Account / Game / Log / Event / SMS / Billing /
    NXWeb / Relay / ChatLog）全部收斂到一個 SQLite 連線池。
    schema 來自 `Database/` 專案。
 
-3. **IOCP 網路層 + session 管理。**
-   `FrameReader` 與 `SecureChannel` 已經是 session 層需要的全部協定狀態。
+4. **Windows 的 IOCP 傳輸層。**
+   `Connection` 已經和 socket 無關且有測試；要換的只有 `TcpServer`。
 
-4. **路由模型收斂。**
+5. **路由模型收斂。**
    `ePerformerID = SC_<server> | PC_<performer>`。單一行程下，
    `KncSend()` 的「跨伺服器」分支只剩下面向客戶端的 proxy 那一條。
 

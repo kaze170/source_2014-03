@@ -9,7 +9,7 @@ The point is to break correlated errors. A test I wrote can share a
 misunderstanding with the code I wrote. A disagreement with `pyDes` or Python's
 `hashlib` cannot.
 
-All seven are reproducible from a clean checkout. They are not part of
+All eight are reproducible from a clean checkout. They are not part of
 `run_tests.sh` because they need Python packages and the original legacy tree.
 
 | script | checks | against |
@@ -21,6 +21,7 @@ All seven are reproducible from a clean checkout. They are not part of
 | `check_packets.sh` | all 1953 packet layouts, every field and position | a real C++ **compiler** running the original serialization macros |
 | `check_event_packets.sh` | all 3386 event→packet bindings | `static_assert` on the original headers + the **symbol tables** of the legacy code built for 10 regions |
 | `check_handshake.sh` | a whole login conversation, both directions | an independent Python implementation of the **entire stack** |
+| `check_live.sh` | the **running server**, over a real TCP socket | the same independent implementation, as a client |
 
 ## Requirements
 
@@ -28,6 +29,12 @@ All seven are reproducible from a clean checkout. They are not part of
 python3 -m venv .venv
 .venv/bin/pip install pyDes
 ```
+
+`check_handshake.sh` and `check_live.sh` share `knc_ref.py`, an independent
+implementation of the client side of the wire protocol written from the
+legacy C++ sources. It is the only file here that is a deliverable in its
+own right: it is how you talk to this server without using this server's
+own code.
 
 `check_event_ids.sh`, `check_packets.sh` and `check_event_packets.sh`
 additionally need the original
@@ -45,6 +52,7 @@ tools/crosscheck/check_event_ids.sh      # needs the legacy tree
 tools/crosscheck/check_packets.sh        # needs the legacy tree, ~30s
 tools/crosscheck/check_event_packets.sh  # needs the legacy tree, ~90s
 tools/crosscheck/check_handshake.sh      # no legacy tree needed, ~10s
+tools/crosscheck/check_live.sh           # builds and runs the server, ~12s
 ```
 
 ## Last recorded results
@@ -57,6 +65,7 @@ envelope  :  200 frames,      0 mismatches
 packets   : 1953 types / 7537 field signatures, 0 mismatches
 bindings  : 3386 event->packet bindings, 0 mismatches
 handshake : 26 checks, both directions byte-identical
+live      : 17 checks against the running server
 ```
 
 ## Why `check_envelope.sh` and `check_packets.sh` matter most
@@ -94,6 +103,13 @@ call `PUT`.
 bytes, not the 26 the docs claimed. The test vector had always been right;
 only the prose was wrong, and it took two implementations agreeing on the
 bytes to make the stray number visible.
+
+`check_live.sh` found the worst one. Liveness deadlines are measured as
+`now - last_event`, and the clocks started at zero; under a real
+`steady_clock` every connection was born an hour silent and was reaped
+before the client could speak. 2500 passing checks and two independent
+implementations agreeing byte for byte had nothing to say about it, because
+the tests count from zero too.
 
 `check_handshake.sh` is also the only one whose falsifiability is recorded:
 five mutations of its reference implementation (sequence endianness, length

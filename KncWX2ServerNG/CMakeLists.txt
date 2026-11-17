@@ -109,6 +109,8 @@ set(KNCNG_MODULE_SOURCES
   src/proto/packets.cppm
   src/proto/dispatch.cppm
   src/proto/session.cppm
+  src/app/router.cppm
+  src/net/server.cppm
 )
 
 add_library(knc_core STATIC)
@@ -137,6 +139,22 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# The server
+# ---------------------------------------------------------------------------
+# main.cpp includes the modules directly in header mode, exactly as the tests
+# do. The POSIX transport in src/net/server.cppm is compiled out on Windows,
+# where an IOCP backend has to take its place; the Connection half above it
+# is platform-independent.
+if(NOT WIN32)
+  add_executable(kncng_server src/main.cpp)
+  target_compile_features(kncng_server PRIVATE cxx_std_20)
+  target_compile_definitions(kncng_server PRIVATE KNC_CLASSIC=1)
+  target_link_libraries(kncng_server PRIVATE knc_zlib)
+  target_include_directories(kncng_server PRIVATE src)
+  target_compile_options(kncng_server PRIVATE -Wall -Wextra)
+endif()
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 # The test sources deliberately #include the .cppm files directly in
@@ -145,7 +163,7 @@ endif()
 if(KNCNG_BUILD_TESTS)
   enable_testing()
   foreach(suite IN ITEMS test_crypto test_serializer test_proto test_event_ids
-                         test_packets test_dispatch test_session)
+                         test_packets test_dispatch test_session test_router)
     add_executable(${suite} tests/${suite}.cpp)
     target_compile_features(${suite} PRIVATE cxx_std_20)
     target_compile_definitions(${suite} PRIVATE KNC_CLASSIC=1)
