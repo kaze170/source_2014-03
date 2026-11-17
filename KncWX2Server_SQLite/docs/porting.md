@@ -188,7 +188,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 112 tests, ~2 s
+make test                                  # 114 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -209,6 +209,33 @@ build/linux/bin/knc_tests --filter Db      # one suite
 the handshake after being redirected), a channel id is refused until the session has authenticated, and
 is answered afterwards - one process, one session, so the handshake that just succeeded is what
 unlocks the channel service on that port.
+
+### KUnitInfo carries the table row, and `fromRecord` hides the difference
+
+`OnAccountSelectUnitAck` (`GSUserFunction.cpp:4741-4756`) does not compute the select payload from
+scratch - it receives a packet the DB layer already filled and adds to it. All it adds to the stat
+block is the raw table row:
+
+```cpp
+GetUnitStat( class, level, sUnitStat );   // StatTable, base row only
+m_kStat.baseHp   += sUnitStat.baseHp;     // ...and the same for the other four
+```
+
+So `KUnitInfo::m_kStat` is the level/class table row and nothing else. Equipment is absent, buffs are
+absent, and the numbers move only when the class or the level moves. `ChannelService::toUnitInfo`
+therefore reads `Character::baseStat()`, not `totalStat()`.
+
+The rewrite had to spell that out because the two are equal on this path for an unrelated reason:
+`Character::fromRecord()` (`src/kgame/Character.cpp:35`) never loads `items_`, so `equipmentStat()`
+contributes nothing and `totalStat_ == baseStat_` even for a character wearing a +5000 HP item. A
+test that merely compares the payload before and after equipping something passes with either
+accessor, i.e. it proves nothing. The test that is actually falsifiable asserts the five fields
+against `defaultStatTable().getUnitStat(class, level)`.
+
+`m_kGameStat` is a different field and stays zero here. It is the *in-battle* block: `GetUnitInfo`
+(`:4041`) initialises it, the room code overwrites it on entry (`:11828-12054`), and the select path
+never touches it. Copying `m_kStat` into it would tell a freshly selected character it is already in
+a fight.
 
 ### Two things the 2014 server set handlers do that look like bugs
 

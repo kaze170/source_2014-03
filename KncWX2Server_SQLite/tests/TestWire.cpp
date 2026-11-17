@@ -351,6 +351,38 @@ KTEST(Security, sequenceNumberAdvancesOnlyForRealSpi) {
     KCHECK(!db.contains(spi));
 }
 
+// A peer that keeps its own association must still be able to open a frame after the server has
+// erased the SPI from the shared database. That erase is what happens on hang-up: the server sends
+// its last reply (EGS_VERIFY_ACCOUNT_ACK for a blocked account) and then drops the session, removing
+// the entry. Before this, the test clients looked the SPI up in that database on every decode, so a
+// frame that arrived just before the teardown was either opened with the SPI 0 default keys - ICV
+// mismatch, packet dropped - or, when the client tried to put its copy back, raced the erase it was
+// trying to survive. A real client holds its keys locally, which is what useAssociation() models.
+KTEST(Security, aPeerWithItsOwnKeysOpensAFrameAfterTheServerErasesTheSpi) {
+    auto& db = sec::SecurityDatabase::instance();
+    const SpiType spi = db.createNewSA();
+    KCHECK(spi >= 1);
+
+    // The client took its copy at handshake time.
+    const sec::SecurityAssociation clientSa = db.get(spi);
+    const byte body[16] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    sec::SecureBuffer sender(spi);
+    sender.useAssociation(clientSa);
+    KCHECK(sender.create_notRWM(body, sizeof(body)));
+
+    // The server drops the session, and its association, before the client gets to decode.
+    db.remove(spi);
+    KCHECK(!db.contains(spi));
+
+    sec::SecureBuffer receiver(spi, sender.dataPtr(), sender.size());
+    receiver.useAssociation(clientSa);
+    KCHECK(receiver.isAuthentic_notRWM(false));
+    Bytes opened;
+    KCHECK(receiver.getPayload_notRWM(opened, /*authentic=*/false, /*checkSequenceNum=*/false));
+    KCHECK_EQ(opened.size(), sizeof(body));
+    KCHECK(std::memcmp(opened.data(), body, sizeof(body)) == 0);
+}
+
 KTEST(Security, handshakePayloadCarriesSpiAndAssociation) {
     auto& db = sec::SecurityDatabase::instance();
     const SpiType spi = db.createNewSA();

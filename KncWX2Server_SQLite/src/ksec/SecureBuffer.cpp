@@ -187,6 +187,13 @@ SecurityAssociation SecurityDatabase::get(SpiType spi) const {
     return it->second;
 }
 
+std::shared_ptr<const SecurityAssociation> SecurityDatabase::pin(SpiType spi) const {
+    std::lock_guard<std::mutex> guard(mutex_);
+    const auto it = map_.find(spi);
+    if (it == map_.end()) return nullptr;
+    return std::make_shared<const SecurityAssociation>(it->second);
+}
+
 SecurityAssociation SecurityDatabase::defaultSA() { return get(0); }
 
 void SecurityDatabase::bumpSequenceNum(SpiType spi) {
@@ -204,6 +211,17 @@ bool SecurityDatabase::validateSequenceNum(SpiType spi, SeqType seq) {
     return it->second.isValidSequenceNum_notRWM(seq);
 }
 
+bool SecurityDatabase::validateSequenceNumIfPresent(SpiType spi, SeqType seq, bool* present) {
+    std::lock_guard<std::mutex> guard(mutex_);
+    const auto it = map_.find(spi);
+    if (it == map_.end()) {
+        if (present) *present = false;
+        return false;
+    }
+    if (present) *present = true;
+    return it->second.isValidSequenceNum_notRWM(seq);
+}
+
 std::size_t SecurityDatabase::size() const {
     std::lock_guard<std::mutex> guard(mutex_);
     return map_.size();
@@ -217,9 +235,20 @@ SecureBuffer::SecureBuffer(SpiType spi, const void* recv, std::size_t bytes) : s
     buffer_.assign(p, p + bytes);
 }
 
+std::shared_ptr<const SecurityAssociation> SecureBuffer::pinAssociation() const {
+    if (!pinAttempted_) {
+        pinAttempted_ = true;
+        pinned_ = SecurityDatabase::instance().pin(spi_);
+    }
+    return pinned_;
+}
+
 SecurityAssociation& SecureBuffer::sa() const {
     if (!hasSa_) {
-        sa_ = SecurityDatabase::instance().get(spi_);
+        // Take the keys from the pin when there is one, so a buffer that arrived before the
+        // peer's teardown still verifies with the keys it was sealed under.
+        const auto pinned = pinAssociation();
+        sa_ = pinned ? *pinned : SecurityDatabase::instance().get(spi_);
         hasSa_ = true;
     }
     return sa_;
@@ -289,8 +318,14 @@ bool SecureBuffer::create_notRWM(const byte* payload, std::size_t len) {
     generateICV(buffer_.data(), buffer_.size(), icv.data());
     buffer_.insert(buffer_.end(), icv.begin(), icv.end());
 
-    // Sequence numbers only advance for sessions that own a real SPI (not for SPI 0).
-    SecurityDatabase::instance().bumpSequenceNum(spi_);
+    // Sequence numbers only advance for sessions that own a real SPI (not for SPI 0). A buffer
+    // with its own association advances that copy: it never touches the shared database, the same
+    // way a client's own keystream counter is private to the client.
+    if (ownsAssociation_) {
+        sa_.incrSequenceNum_notRWM();
+    } else {
+        SecurityDatabase::instance().bumpSequenceNum(spi_);
+    }
     return true;
 }
 
@@ -321,13 +356,31 @@ bool SecureBuffer::isValidPadding(const Bytes& plain, std::size_t& padBytes) con
 bool SecureBuffer::isValidSequenceNum_notRWM(SeqType& seq) const {
     if (buffer_.size() < sizeof(USHORT) + sizeof(UINT32)) return false;
     seq = readLe32(buffer_.data() + sizeof(USHORT));
-    return SecurityDatabase::instance().validateSequenceNum(spi_, seq);
+    // The live entry owns the counter, so prefer it. Only when the peer's teardown has already
+    // removed the SPI do we fall back to the snapshot the frame was pinned with - looking the SPI
+    // up blindly would silently match the SPI 0 default and reject a legitimate frame.
+    if (ownsAssociation_) return sa_.isValidSequenceNum_notRWM(seq);
+    bool present = false;
+    const bool live = SecurityDatabase::instance().validateSequenceNumIfPresent(spi_, seq, &present);
+    if (present) return live;
+    if (!pinAssociation()) return false;
+    // The check is not const (it records the accepted number), so run it on this buffer's own
+    // copy rather than on the shared snapshot.
+    return sa().isValidSequenceNum_notRWM(seq);
 }
 
 bool SecureBuffer::isAuthentic_notRWM(bool checkSequenceNum) {
     // The server validates against its own SPI, never against the SPI echoed by the client
     // (SecureBuffer.cpp: "IsValidSPIndex" only checks GetSADB().Find(m_nSPIndex)).
-    if (!SecurityDatabase::instance().contains(spi_)) return false;
+    //
+    // The association is pinned here, in one locked step, and everything below uses that snapshot.
+    // Asking contains() and then sa() separately was a race: the peer thread's teardown sits
+    // exactly between them, get() then misses and quietly falls back to the SPI 0 default keys
+    // (SecurityDatabase::get), and the ICV of a perfectly good frame fails to verify.
+    //
+    // A buffer carrying its own association (useAssociation) needs no lookup at all - that is the
+    // client side, which owns its keys and must not depend on the server's database entry.
+    if (!ownsAssociation_ && !pinAssociation()) return false;
     if (!isValidSize()) return false;
     if (!isValidICV()) return false;
     if (spi_ != 0 && checkSequenceNum) {

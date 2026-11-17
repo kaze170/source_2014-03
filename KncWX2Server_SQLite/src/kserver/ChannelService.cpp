@@ -105,15 +105,22 @@ UnitInfo ChannelService::toUnitInfo(const db::UnitRecord& unit) const {
     info.csPointEndDate = toWide(unit.cspEndDate);
     info.straightVictories = unit.straightWins;
 
-    // Base and game stats come from the same level curve the game rules use.
+    // KUnitInfo carries the class/level row of StatTable. GSUserFunction.cpp:4742-4747 adds
+    // GetUnitStat( class, level ) to a packet loaded straight from the database, so equipment is
+    // not part of this payload. fromRecord() does not load the unit's items, which is why
+    // totalStat() and baseStat() happen to agree here - asking for baseStat() states the intent
+    // instead of relying on that coincidence.
     const knc::game::Character character = knc::game::Character::fromRecord(unit);
-    const knc::game::BaseStat& base = character.totalStat();
+    const knc::game::BaseStat& base = character.baseStat();
     info.stat.baseHp = base.baseHp;
     info.stat.atkPhysic = base.atkPhysic;
     info.stat.atkMagic = base.atkMagic;
     info.stat.defPhysic = base.defPhysic;
     info.stat.defMagic = base.defMagic;
-    info.gameStat = info.stat;
+    // KUnitInfo::m_kGameStat stays zeroed here. It is the *in-battle* stat block - the room code
+    // fills it (GSUserFunction.cpp:11828, 12054) - and the character select path never touches it,
+    // so the packet that reaches the client carries an Init()'d block. Copying m_kStat into it
+    // would tell the client it is already in a fight.
 
     // m_nNowBaseLevelEXP / m_nNextBaseLevelEXP are cumulative totals, not the window inside the
     // level: GSUserFunction.cpp:4738-4739 fills them with GetRequireTotalExpbyLevel( level ) and

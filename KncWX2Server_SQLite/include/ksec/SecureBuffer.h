@@ -15,7 +15,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 #include "kcore/Serialize.h"
@@ -80,11 +82,22 @@ public:
     // another thread created or removed an association and the unordered_map rehashed.
     SecurityAssociation get(SpiType spi) const;
 
+    // Look the association up once and hand back a shared, immutable snapshot of it. Unlike get()
+    // this does *not* fall back to the SPI 0 default: a buffer for an unknown SPI must fail to
+    // authenticate rather than be checked against the wrong keys. Returns nullptr when unknown.
+    std::shared_ptr<const SecurityAssociation> pin(SpiType spi) const;
+
     // Sequence bookkeeping has to happen inside the database: it is the single owner of the four
     // bytes that change per frame, and doing it under the lock keeps two threads from racing on
     // the same counter.
     void bumpSequenceNum(SpiType spi);
     bool validateSequenceNum(SpiType spi, SeqType seq);
+
+    // Same check, but reports whether the SPI is still in the database at all. The receive path
+    // needs that distinction: a *known* SPI is validated against the live counter (the owner is
+    // the only other writer), while an SPI removed by the peer's teardown must fall back to the
+    // snapshot the frame was pinned with - not to the SPI 0 default keys.
+    bool validateSequenceNumIfPresent(SpiType spi, SeqType seq, bool* present);
 
     SecurityAssociation defaultSA();
 
@@ -127,9 +140,22 @@ public:
     // Worst case wire size for a payload of payloadLen bytes (used to reserve buffers).
     static std::size_t maxSecureSize(std::size_t payloadLen);
 
+    // Installs the association this buffer must use, instead of looking it up in the process-wide
+    // database. A real peer keeps its keys locally: the database is the *server's* store, and its
+    // entries disappear when the connection is torn down, so a client that re-read them would fail
+    // to open the replies that arrive just before the hang-up. Tests use this to behave like one.
+    void useAssociation(const SecurityAssociation& association) {
+        sa_ = association;
+        hasSa_ = true;
+        ownsAssociation_ = true;
+    }
+
 private:
-    void useAssociation(const SecurityAssociation& association) { sa_ = association; hasSa_ = true; }
     SecurityAssociation& sa() const;
+    // Snapshot of this buffer's association, taken once. Keys must not be re-read from the shared
+    // database after that point: the database is process-wide and the peer's teardown removes the
+    // association, which used to make a frame that had already arrived fail to authenticate.
+    std::shared_ptr<const SecurityAssociation> pinAssociation() const;
 
     void generateIv(std::array<byte, kIvSize>& iv) const;
     bool generateCrypt(const byte* payload, std::size_t len, const std::array<byte, kIvSize>& iv,
@@ -147,6 +173,12 @@ private:
     // sequence counter, even if another thread touches the database meanwhile.
     mutable SecurityAssociation sa_;
     mutable bool hasSa_ = false;
+    mutable std::shared_ptr<const SecurityAssociation> pinned_;
+    mutable bool pinAttempted_ = false;
+    // True only when useAssociation() supplied the keys. Distinct from hasSa_, which also becomes
+    // true when sa() lazily loads them out of the database: only an owned association keeps its
+    // sequence counter private, a database-loaded one must still advance the database entry.
+    bool ownsAssociation_ = false;
 };
 
 // Utility used by the unit tests and the tools: build the SPI 0 default keys.

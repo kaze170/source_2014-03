@@ -78,8 +78,11 @@ std::vector<byte> makeFrame(const sec::SecureBuffer& secure) {
     return frame;
 }
 
-// Minimal client: shares the SecurityAssociation database with the server (same process), which
-// is exactly how the original server-side integration tests worked.
+// Minimal client. It keeps its own copy of the negotiated SecurityAssociation instead of reading
+// the server's process-wide database: that database is the *server's* store and the server erases
+// the entry when the connection is torn down, so a client that looked the SPI up on every frame
+// would fail to open the replies that arrive just before a hang-up. A real client holds its keys
+// locally, and so does this one.
 class TestClient {
 public:
     bool connectTo(unsigned short port) {
@@ -123,9 +126,12 @@ public:
         return false;
     }
 
-    // Decrypt the last frame with the given SPI and decode the KEvent inside.
+    // Decrypt the last frame with the given SPI and decode the KEvent inside. Frames for the
+    // session SPI use the association adopted at handshake time; SPI 0 has no association and
+    // falls back to the built-in default keys.
     bool decodeLast(SpiType spi, Event& out, bool checkSeq = false) {
         sec::SecureBuffer buffer(spi, lastFrame_.data(), lastFrame_.size());
+        if (spi != 0 && haveSa_ && spi == spi_) buffer.useAssociation(sa_);
         if (!buffer.isAuthentic_notRWM(checkSeq)) return false;
         Bytes payload;
         if (!buffer.getPayload_notRWM(payload, false, checkSeq)) return false;
@@ -136,7 +142,11 @@ public:
         s.get(out);
         s.end();
         out.payload.uncompress();
-        return s.ok();
+        if (!s.ok()) return false;
+        // The accept packet carries the keys the rest of the session is sealed with; take them now,
+        // while they are still here.
+        if (spi == 0 && out.eventId == E_ACCEPT_CONNECTION_NOT) adoptFromAccept(out);
+        return true;
     }
 
     // Sends an event sealed with `spi`.
@@ -147,6 +157,7 @@ public:
         s.put(ev);
         s.end();
         sec::SecureBuffer secure(spi);
+        if (spi != 0 && haveSa_ && spi == spi_) secure.useAssociation(sa_);
         if (!secure.create_notRWM(wire.data(), wire.size())) return false;
         const std::vector<byte> frame = makeFrame(secure);
         std::size_t off = 0;
@@ -183,9 +194,27 @@ public:
     SpiType spi = 0;
     std::vector<byte> lastFrame_;
 
+    // Adopts the session association announced by an E_ACCEPT_CONNECTION_NOT. The client keeps it
+    // locally from here on, like a real client, instead of re-reading the server's database.
+    void adoptFromAccept(const Event& accept) {
+        SerBuffer copy = accept.payload;
+        Serializer s;
+        s.beginReading(&copy);
+        sec::SecurityAssociation sa;
+        s.get(spi_, sa);
+        s.end();
+        if (s.ok() && spi_ != 0) {
+            sa_ = sa;
+            haveSa_ = true;
+        }
+    }
+
 private:
     SocketHandle sock_ = kInvalidSocket;
     std::vector<byte> inBuf_;
+    SpiType spi_ = 0;
+    sec::SecurityAssociation sa_;
+    bool haveSa_ = false;
 };
 
 // Tiny harness that runs a reactor on a background thread.

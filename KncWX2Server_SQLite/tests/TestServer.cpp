@@ -155,6 +155,7 @@ public:
         s.put(event);
         s.end();
         sec::SecureBuffer secure(useSpi);
+        if (haveSa_ && useSpi != 0 && useSpi == spi) secure.useAssociation(sa_);
         if (!secure.create_notRWM(wire.data(), wire.size())) return false;
         const std::vector<byte> frame = makeFrame(secure);
         std::size_t off = 0;
@@ -237,15 +238,12 @@ private:
         // closes, and an unknown SPI quietly falls back to the SPI 0 keys - so without this the
         // replies that arrive just before a hang-up would fail to authenticate. A real client
         // keeps its keys locally and never looks them up in the server's database.
-        if (haveSa_ && useSpi != 0) {
-            // Put our own association back under its SPI. The server deletes it when the connection
-            // closes, and an unknown SPI silently falls back to the SPI 0 keys, so without this the
-            // replies that arrive just before a hang-up would fail to authenticate. A real client
-            // keeps its keys locally and never consults the server's database at all.
-            sec::SecurityDatabase::instance().remove(useSpi);
-            sec::SecurityDatabase::instance().insert(useSpi, sa_);
-        }
+        // Use our own copy of the association rather than the server's database. The server erases
+        // its entry when the connection closes, and writing ours back in (what this did before)
+        // raced with that erase: whichever won, the frame we had already received either failed to
+        // authenticate or decoded with the wrong keys. A real client holds its keys locally.
         sec::SecureBuffer buffer(useSpi, frame_.data(), frame_.size());
+        if (haveSa_ && useSpi != 0 && useSpi == spi) buffer.useAssociation(sa_);
         if (!buffer.isAuthentic_notRWM(checkSeq)) return false;
         Bytes payload;
         if (!buffer.getPayload_notRWM(payload, false, checkSeq)) return false;

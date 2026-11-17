@@ -16,6 +16,7 @@
 #include "kproto/LoginPackets.h"
 #include "kproto/UnitPackets.h"
 #include "kgame/ExpTable.h"
+#include "kgame/StatTable.h"
 #include "kgame/Rules.h"
 #include "kserver/ChannelService.h"
 #include "kserver/Config.h"
@@ -703,6 +704,56 @@ KTEST(Channel, theUnitListReportsTheLevelTheExpTotalImplies) {
     KCHECK_EQ(after.unitInfo.front().nextBaseLevelExp,
               static_cast<int>(table.expToReachLevel(game::ExpRules::kMaxLevel + 1)));
     KCHECK(after.unitInfo.front().nowBaseLevelExp > 0);
+}
+
+// KUnitInfo's stat block is the class/level row of StatTable, nothing else: the original adds
+// GetUnitStat( class, level ) to a packet loaded straight from the database
+// (GSUserFunction.cpp:4742-4747). Asserting the exact table values is what makes this test able to
+// fail - comparing two payloads against each other cannot, because fromRecord() never loads the
+// character's items, so totalStat() and baseStat() are the same number on this path.
+KTEST(Channel, theUnitListStatsAreTheStatTableRow) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Laby");
+    KCHECK(uid > 0);
+
+    Event event = f.makeEvent(EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_REQ);
+    f.service->handle(f.session, responder, event);
+    MyUnitAndInventoryInfoListAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.unitInfo.size(), std::size_t(1));
+    const UnitInfo& unit = ack.unitInfo.front();
+
+    db::UnitRecord record;
+    KCHECK(f.repos().units.load(uid, &record));
+    game::BaseStat expected;
+    KCHECK(game::defaultStatTable().getUnitStat(record.unitClass, record.level, &expected));
+
+    KCHECK(expected.baseHp > 0);  // the table really has a row for a level 1 character
+    KCHECK_EQ(unit.stat.baseHp, expected.baseHp);
+    KCHECK_EQ(unit.stat.atkPhysic, expected.atkPhysic);
+    KCHECK_EQ(unit.stat.atkMagic, expected.atkMagic);
+    KCHECK_EQ(unit.stat.defPhysic, expected.defPhysic);
+    KCHECK_EQ(unit.stat.defMagic, expected.defMagic);
+    // gameStat is the *in-battle* block. The select path never fills it
+    // (GSUserFunction.cpp:4737-4756 only touches m_kStat; :4041 Init()s gameStat on the
+    // GetUnitInfo path, and :11828+ is what room entry overwrites), so the client gets zeros.
+    KCHECK_EQ(unit.gameStat.baseHp, 0);
+    KCHECK_EQ(unit.gameStat.atkPhysic, 0);
+    KCHECK_EQ(unit.gameStat.atkMagic, 0);
+    KCHECK_EQ(unit.gameStat.defPhysic, 0);
+    KCHECK_EQ(unit.gameStat.defMagic, 0);
+
+    // Equipping something must not move it: items are not part of this packet.
+    std::int64_t itemUid = 0;
+    KCHECK(f.repos().inventory.addItem(uid, 100001, kStEquip, 0, 1, &itemUid));
+    KCHECK(f.repos().inventory.setAttribute(itemUid, /*index=*/0, /*type=*/0 /*HP*/, 5000));
+    KCHECK(f.repos().inventory.setEquipped(uid, itemUid, true));
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    MyUnitAndInventoryInfoListAck after;
+    KCHECK(responder.last(after));
+    KCHECK_EQ(after.unitInfo.front().stat.baseHp, expected.baseHp);
 }
 
 // --------------------------------------------------------------------------- access control
