@@ -188,7 +188,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 115 tests, ~2 s
+make test                                  # 117 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -250,7 +250,19 @@ therefore reports -1. The same holds for `m_bIsGameBang` (false) and for the P2P
 `m_usPort`, which the original fills from the UDP echo listener via `SetP2PIP` - the rewrite has no
 such listener, so they stay empty and the field is documented rather than faked.
 
-### Known deviation: item socket ids on the wire
+### Known deviation: channel and server-set user counts
+
+The original channel list reads each game server's user count from the database
+(`GameServer.cpp:1148`, `ChannelLogDBThread.cpp:339`); the server-set list sums
+those game-server counts per set (`GSUserSession.cpp`, `EGS_GET_SERVER_SET_DATA_REQ`).
+The rewrite has no per-game-server registry: its channel list currently uses the
+process-wide connection count for every configured channel, including connections
+to other listener roles. This is only an approximation, not per-channel CCU. The
+server-set occupancy level still assumes zero users rather than attributing that
+same global count to every set. Accurate counts require tracking game-server users
+and their channel/set association.
+
+## Known deviation: item socket ids on the wire
 
 `KItemInfo` carries two socket vectors, `m_vecItemSocket` and `m_vecRandomSocket`. Both are lists of
 **option ids**, not (type, value) pairs: the loader truncates trailing zeroes from two separate

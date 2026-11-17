@@ -16,7 +16,9 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kcore/Types.h"
@@ -43,8 +45,19 @@ char userCountLevel(int current, int max);
 
 class ChannelService {
 public:
+    // Answers "how many users are connected right now". KChannelInfo::m_iCurrentUser is the live
+    // count of the channel (ChannelLogDBThread.cpp:339 reads the column the game server writes from
+    // KActorManager::GetCount(), GameServer.cpp:1148). The owning Server supplies its process-wide
+    // session count as an approximation, not a per-channel count (see docs/porting.md). Tests and
+    // tools without a provider report 0.
+    using UserCountProvider = std::function<int()>;
+
     ChannelService(db::Repositories& repos, const Config& config)
         : repos_(repos), config_(config) {}
+
+    // Wired by Server once it exists; ChannelService is constructed before the session map is
+    // meaningful, and the provider is only read while serving a request.
+    void setUserCountProvider(UserCountProvider provider) { userCount_ = std::move(provider); }
 
     // Handles one channel-port event. Returns false when the connection should be dropped.
     bool handle(AccountSession& state, LoginResponder& responder, Event& event);
@@ -78,6 +91,7 @@ private:
 
     db::Repositories& repos_;
     Config config_;
+    UserCountProvider userCount_;
     std::int64_t deleteReuseDelayMs_ = 7LL * 24 * 60 * 60 * 1000;  // SERV_UNIT_WAIT_DELETE window
     int unitsCreated_ = 0;
     int unitsDeleted_ = 0;

@@ -576,6 +576,11 @@ KTEST(Server, endToEndLoginAndUnitFlow) {
     KCHECK_EQ(listAck.channelInfo.size(), std::size_t(1));
     KCHECK_EQ(listAck.channelInfo[0].channelId, 1);
     KCHECK_EQ(listAck.channelInfo[0].masterPort, fixture.channelPort());
+    // The live provider must include this connection. Do not read the server's session map
+    // from the test thread while the reactor owns it.
+    KCHECK(listAck.channelInfo[0].currentUser >= 1);
+    KCHECK_EQ(listAck.channelInfo[0].curPartyCount, 0);
+    KCHECK_EQ(listAck.channelInfo[0].playGamePartyCount, 0);
 
     // Empty unit list.
     KCHECK(channel.sendPacket(channel.spi, EGS_MY_UNIT_AND_INVENTORY_INFO_LIST_REQ, PacketOk{}));

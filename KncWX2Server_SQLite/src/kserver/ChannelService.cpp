@@ -175,7 +175,13 @@ ChannelInfo ChannelService::toChannelInfo(const ChannelConfig& channel) const {
     info.masterPort = channel.masterPort;
     info.ncUdpPort = channel.ncUdpPort;
     info.maxUser = channel.maxUser;
-    info.currentUser = 0;
+    // The live user count of this channel. The 2014 server read it back from the DB column the game
+    // server refreshed from KActorManager::GetCount() (GameServer.cpp:1148, ChannelLogDBThread.cpp:339);
+    // The process-wide session count is an approximation, not per-channel CCU: it includes other
+    // listener roles and is repeated for configured channels. Party counts stay 0: the
+    // rewrite has no party system, and the original also published 0 for a channel with no parties
+    // (ChannelServer.cpp:546-548 clears both counters on every channel-list update).
+    info.currentUser = userCount_ ? userCount_() : 0;
     info.curPartyCount = 0;
     info.playGamePartyCount = 0;
 

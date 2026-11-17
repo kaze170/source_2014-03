@@ -14,7 +14,11 @@ Server::Server(Config config)
       reposOwner_(db::makeRepositories(db_)),
       repos_(*reposOwner_),
       login_(repos_, config_),
-      channel_(repos_, config_) {}
+      channel_(repos_, config_) {
+    // Approximate channel CCU with the process-wide connection count. There is no per-channel
+    // game-server registry yet, so this also includes other listeners (see docs/porting.md).
+    channel_.setUserCountProvider([this]() { return connectedUsers(); });
+}
 
 Server::~Server() { stop(); }
 

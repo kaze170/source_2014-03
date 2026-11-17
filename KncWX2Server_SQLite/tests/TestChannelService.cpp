@@ -278,6 +278,50 @@ KTEST(Channel, channelListCarriesEveryConfiguredChannel) {
     KCHECK_EQ(ack.channelBonusInfo.size(), f.serverConfig.channels.size());
 }
 
+// KChannelInfo::m_iCurrentUser is the live count of users on the channel, not a constant: the 2014
+// server read back the column the game server wrote from KActorManager::GetCount()
+// (GameServer.cpp:1148 -> ChannelLogDBThread.cpp:339). The service takes a provider and reports
+// its value; the process-wide provider is only an approximation of per-channel CCU.
+KTEST(Channel, channelListReportsTheLiveUserCount) {
+    Fixture f;
+    RecordingResponder responder;
+    f.service->setUserCountProvider([] { return 7; });
+
+    Event event = f.makeEvent(EGS_GET_CHANNEL_LIST_REQ);
+    f.service->handle(f.session, responder, event);
+    GetChannelListAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK(!ack.channelInfo.empty());
+    for (const auto& info : ack.channelInfo) {
+        KCHECK_EQ(info.currentUser, 7);
+        // No party system in the rewrite, and the original also published 0 for a channel with no
+        // parties (ChannelServer.cpp:546-548 clears both counters on every update).
+        KCHECK_EQ(info.curPartyCount, 0);
+        KCHECK_EQ(info.playGamePartyCount, 0);
+    }
+
+    // It is read per request, not cached at construction.
+    f.service->setUserCountProvider([] { return 31; });
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    GetChannelListAck second;
+    KCHECK(responder.last(second));
+    KCHECK(!second.channelInfo.empty());
+    KCHECK_EQ(second.channelInfo.front().currentUser, 31);
+}
+
+// Without a provider (tools and service-only tests) the field is 0 rather than a made-up number.
+KTEST(Channel, channelListReportsZeroWithoutAUserCountProvider) {
+    Fixture f;
+    RecordingResponder responder;
+    Event event = f.makeEvent(EGS_GET_CHANNEL_LIST_REQ);
+    f.service->handle(f.session, responder, event);
+    GetChannelListAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK(!ack.channelInfo.empty());
+    KCHECK_EQ(ack.channelInfo.front().currentUser, 0);
+}
+
 // --------------------------------------------------------------------------- character list
 KTEST(Channel, emptyAccountGetsAnEmptyListAndTheFullSlotCount) {
     Fixture f;
