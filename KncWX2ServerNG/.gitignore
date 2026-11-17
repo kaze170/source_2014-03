@@ -17,3 +17,7 @@ gcm.cache/
 .vs/
 *.user
 *.suo
+
+# Python 位元組碼（tools/ 下的產生器）
+__pycache__/
+*.pyc

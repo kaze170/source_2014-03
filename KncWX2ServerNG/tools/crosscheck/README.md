@@ -9,7 +9,7 @@ The point is to break correlated errors. A test I wrote can share a
 misunderstanding with the code I wrote. A disagreement with `pyDes` or Python's
 `hashlib` cannot.
 
-All five are reproducible from a clean checkout. They are not part of
+All six are reproducible from a clean checkout. They are not part of
 `run_tests.sh` because they need Python packages and the original legacy tree.
 
 | script | checks | against |
@@ -19,6 +19,7 @@ All five are reproducible from a clean checkout. They are not part of
 | `check_des.sh` | DES-CBC, both directions | `pyDes` (pure-Python, independent) |
 | `check_envelope.sh` | the complete `KSecureBuffer` frame | a Python re-implementation written from the legacy C++ sources |
 | `check_packets.sh` | all 1953 packet layouts, every field and position | a real C++ **compiler** running the original serialization macros |
+| `check_event_packets.sh` | all 3386 event→packet bindings | `static_assert` on the original headers + the **symbol tables** of the legacy code built for 10 regions |
 
 ## Requirements
 
@@ -27,7 +28,8 @@ python3 -m venv .venv
 .venv/bin/pip install pyDes
 ```
 
-`check_event_ids.sh` and `check_packets.sh` additionally need the original
+`check_event_ids.sh`, `check_packets.sh` and `check_event_packets.sh`
+additionally need the original
 `KncWX2Server/Common` tree, which lives beside this project in the same
 repository. Neither needs any Python package.
 
@@ -40,6 +42,7 @@ tools/crosscheck/check_des.sh
 tools/crosscheck/check_envelope.sh
 tools/crosscheck/check_event_ids.sh      # needs the legacy tree
 tools/crosscheck/check_packets.sh        # needs the legacy tree, ~30s
+tools/crosscheck/check_event_packets.sh  # needs the legacy tree, ~90s
 ```
 
 ## Last recorded results
@@ -50,6 +53,7 @@ MD5/HMAC  : 1200 comparisons, 0 mismatches
 DES-CBC   :  600 comparisons, 0 mismatches
 envelope  :  200 frames,      0 mismatches
 packets   : 1953 types / 7537 field signatures, 0 mismatches
+bindings  : 3386 event->packet bindings, 0 mismatches
 ```
 
 ## Why `check_envelope.sh` and `check_packets.sh` matter most
@@ -78,3 +82,13 @@ It found three real problems that the regex path had silently accepted: the
 the wrong definition of `KBillProductInfo`), a member swallowed by an inline
 method with no trailing semicolon, and two `SERIALIZE_DEFINE_GET` bodies that
 call `PUT`.
+
+`check_event_packets.sh` found a fourth: 41 event ids whose payload is a bare
+`typedef __int64 KEGS_ACCEPT_FRIEND_REQ;` rather than a struct. They have no
+`DECL_PACKET` anywhere and had been filed under "no payload".
+
+Both scripts are worth reading for how their *first* versions were wrong —
+each docstring records it. Testing "does the name compile" instead of "can
+this build serialise it", and running `nm` on a probe TU where every symbol
+is undefined by construction, both produced green checks that measured
+nothing.

@@ -57,8 +57,9 @@ Pins behaviour against published vectors and literal byte strings.
 | framing | byte-at-a-time delivery, multi-frame reads, every malformed length | pass |
 | event ids | structural invariants over all 3386 rows | pass |
 | packet layouts | hand-written byte vectors for the login handshake; container, fixed-array and nested-struct shapes; the two repaired `GET` bodies | pass |
+| event→packet binding | table internally consistent with `event_ids.inc`; bucket counts; scalar payloads; the client-edge filter only ever narrows | pass |
 
-Totals: **5 suites, 2395 checks, 0 failures.**
+Totals: **6 suites, 2475 checks, 0 failures.**
 
 ### Layer 2 — differential cross-checks (`tools/crosscheck/`)
 
@@ -73,6 +74,7 @@ else's implementation**, on hundreds of random inputs.
 | `check_envelope.sh` | the **complete** `KSecureBuffer` frame | a Python reference written from the legacy C++ sources | 200 frames, 0 mismatches |
 | `check_event_ids.sh` | all 3386 event ids | a real C++ preprocessor on the original headers | 3386 rows, 0 mismatches |
 | `check_packets.sh` | all 1953 packet layouts — every field, type and position | a real C++ **compiler** running the original serialization macros | 1953 types / 7537 fields, 0 mismatches |
+| `check_event_packets.sh` | all 3386 event→packet bindings | `static_assert` against the original headers, plus the **symbol tables** of the legacy code compiled for 10 regions | 3386 bindings, 0 mismatches |
 
 `check_envelope.sh` and `check_packets.sh` are the two that earn their keep.
 DES can be right and HMAC can be right while the composition is still wrong. DES can be right and
@@ -90,6 +92,7 @@ test_serializer  51 checks
 test_proto     2219 checks
 test_event_ids   36 checks
 test_packets     48 checks
+test_dispatch    80 checks
 ```
 
 Run them with:
@@ -116,6 +119,7 @@ PYTHON=.venv/bin/python tools/crosscheck/check_des.sh
 PYTHON=.venv/bin/python tools/crosscheck/check_envelope.sh
 PYTHON=.venv/bin/python tools/crosscheck/check_event_ids.sh
 LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_packets.sh
+LEGACY_COMMON=../KncWX2Server/Common tools/crosscheck/check_event_packets.sh
 ```
 
 ## Cross-verification of the event-id table
@@ -237,6 +241,59 @@ real problem — including the missing `OnlyGlobal/Packet/*_Global.cpp`
 translation units (210 types, and the wrong `KBillProductInfo`) and the two
 `GET` bodies that call `PUT`.
 
+## Cross-verification of the event -> packet binding
+
+Binding event 27 to `KEGS_CONNECT_ACK` is string concatenation plus a walk
+over `typedef` chains. It works for 1957 rows and then quietly does something
+else for the 1958th — `EGS_VERIFY_ACCOUNT_REQ` is a typedef of
+`KUserAuthenticateReq`, and 41 ids are typedefs of bare scalars with no
+struct anywhere.
+
+`tools/crosscheck/check_event_packets.sh` checks each bucket with a different
+oracle, none of which is the generator:
+
+**Bound ids** become `static_assert`s compiled against the original headers:
+
+```cpp
+static_assert(std::is_same<KEGS_VERIFY_ACCOUNT_REQ, KUserAuthenticateReq>::value,
+              "event 30 EGS_VERIFY_ACCOUNT_REQ is not carried by KUserAuthenticateReq");
+```
+
+The compiler resolves both names through the real typedefs. A mis-walked
+alias chain, or an id bound to the wrong struct, fails to compile. Same for
+the 41 scalar rows, asserted against the legacy spelling (`__int64`, `bool`,
+`std::wstring`) rather than against our mapped type, so the check does not
+import our own opinions.
+
+**Unbound ids** are checked against the **symbol table of the compiled legacy
+code**. The six legacy `.cpp` files are built for each of the ten regions and
+`nm --defined-only` lists every `SerializeHelper::PutInto` the build actually
+emits. `kNoStruct` must be absent from all ten; `kOtherRegion` must be absent
+from this one and present in at least one other.
+
+Result: **3386 bindings, 0 mismatches.** The ten per-region type counts the
+symbol tables report (1953, 1965, 1957, 1965, 1975, 1939, 1937, 1945, 1943,
+1915) match the preprocessor-derived counts exactly — two unrelated
+mechanisms arriving at the same numbers.
+
+### Two probes that were wrong first
+
+Worth recording, because both looked right:
+
+* **"Does the name compile?"** is not the same question as "can this build
+  serialise it". `KDBE_CCU_AGENT_ACK` is declared unconditionally and has no
+  serializer under TW/HK. The declaration probe reported 42 false
+  disagreements — 41 of which turned out to be the scalar-payload bucket
+  nobody had noticed, so the wrong probe still earned its keep.
+* **Reading `nm` on a lone probe TU** finds every symbol undefined by
+  construction, so the check passed 1268/1268 while testing nothing. The
+  definitions live in the legacy `.cpp` files; the oracle has to compile
+  those.
+
+A third, smaller lesson: the first negative probe produced a **2.4 GB**
+diagnostic log from 1268 undeclared names. Probes that work by provoking
+compiler errors do not scale.
+
 ## Known-answer vectors, not self-consistency
 
 A round-trip test proves only that a module agrees with itself; it cannot catch
@@ -310,7 +367,11 @@ Honest list:
   `FrameReader` + `SecureChannel`, remains the strongest possible test and is
   the recommended next step.
 * The packet table is generated for **TW/HK only**. Other regions are a
-  `--region` flag away, but nothing has been generated or checked for them.
+  `--region` flag away, and `check_event_packets.sh` already compiles all ten
+  to classify the bindings, but no other region's table has been generated.
+* The binding table says which struct carries an event, not **who may send
+  it**, nor which handler should run. `is_acceptable_from_client()` is a band
+  and region filter, not an authorisation model.
 * The two repaired `GET` bodies (PROTOCOL.md deviation 11) are repaired on the
   assumption that both packets stay server-internal. If either is ever sent to
   a client, the repair becomes a wire break.

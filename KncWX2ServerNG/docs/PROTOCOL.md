@@ -483,3 +483,58 @@ Fixed C arrays are the one shape that is *not* length-prefixed: the legacy
 `PUT` body names each index explicitly, so the elements go out bare.
 `Codec<std::array<...>>` is deliberately a `static_assert` failure so that
 hand-written code cannot accidentally frame one as a container.
+
+## 10. Which packet belongs to which event
+
+An event id and a packet struct are bound by a naming convention —
+`DECL_PACKET(id)` expands to `struct Kid` — and conventions have exceptions.
+`src/proto/event_packets.inc` records the binding for all 3386 ids, in four
+buckets:
+
+| bucket | ids | meaning |
+|---|---|---|
+| `kStruct` | 1958 | a generated struct carries the payload |
+| `kScalar` | 41 | the payload is a **bare value**, not a struct |
+| `kNoStruct` | 1268 | nothing named `Kid` is serialisable in any region |
+| `kOtherRegion` | 119 | serialisable, but not in this region's build |
+
+The decisive question for every bucket is *can this build serialise it*, never
+*is the name declared*. Those differ: `KDBE_CCU_AGENT_ACK` is declared
+unconditionally in `ServerPacket.h` while its `PUT`/`GET` bodies sit behind
+`SERV_KOG_STATISTICS`, and `KELG_CHAT_OBSERVATION_NOT` is declared under
+`SERV_GLOBAL_AUTH` but needs `SERV_INFOSERVER_ADD_WORK` as well for its
+bodies. Both are declared under TW/HK and neither can go on the wire.
+
+### kScalar — the easy one to miss
+
+41 ids have no `DECL_PACKET` anywhere, yet carry a payload:
+
+```cpp
+typedef __int64       KEGS_ACCEPT_FRIEND_REQ;
+typedef bool          KEGS_CALL_MY_LOVER_AGREE_RESULT_NOT;
+typedef float         KEGS_REMAINING_PLAY_TIME_NOT;
+typedef std::wstring  /* ... */;
+```
+
+The entire body is one value, written exactly as that type would be written
+inside a struct — eight big-endian bytes for the int64, one byte for the bool,
+no count and no framing. `PacketOf<Ev::EGS_ACCEPT_FRIEND_REQ>` is
+`std::int64_t`, and `decode_packet` handles it through the same `Codec<T>`
+path as a struct.
+
+### kNoStruct does not mean "no payload"
+
+`E_ACCEPT_CONNECTION_NOT` is in this bucket, and it carries the SPI and the
+entire security association — serialised by hand in the handshake because it
+has to be written before any SA exists (§3). Treat `kNoStruct` as "no
+generated struct"; whether a payload exists is a separate question the table
+does not answer.
+
+### The 119 in `kOtherRegion` are an edge concern
+
+Event numbering is region invariant, so an id belonging to a feature this
+build does not have still occupies its slot. **38 of them sit in the
+client-originable band**: a client can name them and nothing here can parse
+them. `is_client_originable()` lets those through because it only checks the
+band; `is_acceptable_from_client()` refuses them. Inbound client traffic
+should use the latter.
