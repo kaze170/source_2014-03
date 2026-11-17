@@ -33,6 +33,7 @@ On `close()` the database checkpoints with `TRUNCATE`, so a clean shutdown leave
 | `003_social.sql` | `Friends`, `Blacklist`, `Guilds`, `GuildMembers`, `Posts`, `PostItems`, `Recommendations` |
 | `004_economy.sql` | `CashItems`, `CashItemDetails`, `CashInventory`, `BillingAccounts`, `BillingTransactions`, `TradeLog` |
 | `005_progress.sql` | `Rankings`, `EventRewards`, `WorldMissions`, `WorldMissionProgress`, `FieldBossState`, `MatchMakingQueue`, `Statistics`, `Scripts`, `LogEntries`, `SmsQueue` |
+| `006_socket_options.sql` | `ItemSocketOptions` (independent normal and random wire option IDs) |
 
 `tools/gen_schema.py` embeds every script into `src/kdb/SchemaSql.gen.cpp`, so the binary is
 self-contained - run `make gen` after editing any `.sql` file.
@@ -87,9 +88,13 @@ same comparison the 2014 `KExpTable::CheckLevelUp` did.
 Items(ItemUID, UnitUID, ItemCode, SlotIndex, Category, Quantity, EnchantLevel, Endurance,
       MaxEndurance, PeriodEnd, IsEquipped, CreatedAt, UpdatedAt)
 ItemAttributes(ItemUID, AttrIndex, AttrType, AttrValue)   -- AttrType is a KStat key
-ItemSockets(ItemUID, SocketIndex, SocketType, SocketValue)
+ItemSockets(ItemUID, SocketIndex, SocketType, SocketValue) -- stat bonuses, not option IDs
+ItemSocketOptions(ItemUID, SocketKind, SocketIndex, OptionID) -- 0 normal, 1 random; index 0..4
 InventorySizes(UnitUID, Category, Size)                   -- one row per bag
 ```
+
+Version 1 databases retain their socket stat pairs on migration; those pairs cannot be used to
+reconstruct option IDs. Until separately populated, the corresponding wire vectors are empty.
 
 `Category` follows the client's bag numbering (1 equipment, 2 consumable, 3 cash, 4 quest,
 5 special). A new character gets 80 equipment slots and 60 consumable slots; later expansion

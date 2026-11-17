@@ -9,7 +9,7 @@
 namespace knc::db {
 
 // Current schema version. Bump together with a new sql/00N_*.sql migration file.
-inline constexpr std::int64_t kSchemaVersion = 1;
+inline constexpr std::int64_t kSchemaVersion = 2;
 
 struct MigrationResult {
     bool ok = false;

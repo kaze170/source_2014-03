@@ -188,7 +188,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 117 tests, ~2 s
+make test                                  # 120 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 
@@ -262,21 +262,16 @@ server-set occupancy level still assumes zero users rather than attributing that
 same global count to every set. Accurate counts require tracking game-server users
 and their channel/set association.
 
-## Known deviation: item socket ids on the wire
+## Item socket IDs and legacy data
 
-`KItemInfo` carries two socket vectors, `m_vecItemSocket` and `m_vecRandomSocket`. Both are lists of
-**option ids**, not (type, value) pairs: the loader truncates trailing zeroes from two separate
-5-slot `int` arrays (`GSGameDBThread.cpp:9258-9265` under `SERV_BATTLE_FIELD_BOSS`, `:9189-9197` for
-the random ones) and `XSLItemManager.cpp:1890-1892` feeds both vectors to the same
-`GetAndAddStatRelationLevel()`. Each vector has its own length, and either can be empty.
-
-The rewrite's `ItemSockets` table models a socket as `(SocketType, SocketValue)` - a stat kind and
-its amount - because that is what `Character::equipmentStat()` needs to add the bonus
-(`Character.cpp:192-203`). It is therefore **not** the 2014 encoding, and `toUnitInfo`'s inventory
-notice maps the two columns straight onto the two wire vectors, which is wrong for a client that
-reads them as option ids. Fixing it properly means storing the option id alongside the stat pair in
-the schema and in `ItemRecord`; that is a schema change, not a mapping tweak, so it is recorded here
-instead of being guessed at.
+`KItemInfo` contains independent five-slot normal and random option-ID arrays,
+trimmed of trailing zeros (`GSGameDBThread.cpp:9189-9210, 9258-9265, 9305-9326`).
+`ItemSocketOptions` stores these IDs separately from `ItemSockets`, whose type/value
+pairs supply `Character::equipmentStat()`. Schema version 2 adds the new table
+without changing old rows. Existing type/value pairs cannot be converted reliably
+into option IDs; until IDs are populated explicitly, their wire vectors are empty.
+Option IDs do not automatically produce stat bonuses: the option-to-stat lookup
+and socket mutation game logic remain to be implemented.
 
 ### Known deviation: spirit maximum
 

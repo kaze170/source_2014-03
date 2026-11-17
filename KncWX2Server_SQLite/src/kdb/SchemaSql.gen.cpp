@@ -522,6 +522,17 @@ const std::vector<std::pair<std::string, std::string>>& embeddedScripts() {
         "    Success        INTEGER NOT NULL DEFAULT 0\n"
         ");\n"
         ""},
+        {"006_socket_options.sql",
+        "-- Wire option IDs are independent of ItemSockets' computed stat kind and value.\n"
+        "-- Both original arrays have five slots (GSGameDBThread.cpp:9189, :9258).\n"
+        "CREATE TABLE IF NOT EXISTS ItemSocketOptions (\n"
+        "    ItemUID INTEGER NOT NULL REFERENCES Items(ItemUID) ON DELETE CASCADE,\n"
+        "    SocketKind INTEGER NOT NULL CHECK (SocketKind IN (0, 1)),\n"
+        "    SocketIndex INTEGER NOT NULL CHECK (SocketIndex BETWEEN 0 AND 4),\n"
+        "    OptionID INTEGER NOT NULL DEFAULT 0,\n"
+        "    PRIMARY KEY (ItemUID, SocketKind, SocketIndex)\n"
+        ");\n"
+        ""},
     };
     return scripts;
 }

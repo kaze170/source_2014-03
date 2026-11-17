@@ -247,6 +247,17 @@ bool InventoryRepository::listForUnit(UidType unitUid, int category, std::vector
                                                     static_cast<int>(s.at("SocketType").asInt()),
                                                     static_cast<int>(s.at("SocketValue").asInt())});
         }
+        const Rows options = db_.query(
+            "SELECT SocketKind, SocketIndex, OptionID FROM ItemSocketOptions WHERE ItemUID = ?;",
+            {Value(item.itemUid)});
+        for (const auto& option : options) {
+            const int kind = static_cast<int>(option.at("SocketKind").asInt());
+            const int index = static_cast<int>(option.at("SocketIndex").asInt());
+            if ((kind == 0 || kind == 1) && index >= 0 && index < 5) {
+                auto& slots = kind == 0 ? item.itemSocketOptions : item.randomSocketOptions;
+                slots[index] = static_cast<int>(option.at("OptionID").asInt());
+            }
+        }
         out->push_back(std::move(item));
     }
     return true;
@@ -282,6 +293,13 @@ bool InventoryRepository::setSocket(std::int64_t itemUid, int index, int type, i
     return db_.run(
         "INSERT OR REPLACE INTO ItemSockets(ItemUID, SocketIndex, SocketType, SocketValue) VALUES(?,?,?,?);",
         {Value(itemUid), Value(index), Value(type), Value(value)});
+}
+
+bool InventoryRepository::setSocketOption(std::int64_t itemUid, bool random, int index, int optionId) {
+    if (index < 0 || index >= 5) return false;
+    return db_.run(
+        "INSERT OR REPLACE INTO ItemSocketOptions(ItemUID, SocketKind, SocketIndex, OptionID) VALUES(?,?,?,?);",
+        {Value(itemUid), Value(random ? 1 : 0), Value(index), Value(optionId)});
 }
 
 bool InventoryRepository::setEquipped(UidType unitUid, std::int64_t itemUid, bool equipped) {

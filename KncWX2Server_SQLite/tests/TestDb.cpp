@@ -181,6 +181,45 @@ KTEST(Db, inventoryRoundTrip) {
     KCHECK_EQ(items.size(), std::size_t(1));
 }
 
+// A v1 database contains stat pairs but no recoverable wire option IDs.
+KTEST(Db, socketOptionsMigrateWithoutChangingLegacyStats) {
+    TempDb temp;
+    KCHECK(seedDefaultAccounts(temp.db));
+    AccountRecord account;
+    KCHECK(temp.r().accounts.authenticate("test", "test", "127.0.0.1", &account) == AuthOutcome::kOk);
+    const auto unit = temp.r().units.create(account.uid, 0, "Rena", 2, 1);
+    KCHECK(unit.ok);
+    auto& inventory = temp.r().inventory;
+    std::int64_t uid = 0;
+    KCHECK(inventory.addItem(unit.unitUid, 1001, 1, 0, 1, &uid));
+    KCHECK(inventory.setSocket(uid, 2, 3, 55));
+    KCHECK(temp.db.exec("DROP TABLE ItemSocketOptions;"));
+    KCHECK(temp.db.setUserVersion(1));
+    const auto migrated = applySchema(temp.db);
+    KCHECK(migrated.ok);
+    KCHECK_EQ(migrated.fromVersion, std::int64_t(1));
+    KCHECK_EQ(migrated.toVersion, kSchemaVersion);
+    std::vector<ItemRecord> items;
+    KCHECK(inventory.listForUnit(unit.unitUid, 1, &items));
+    KCHECK_EQ(items.size(), std::size_t(1));
+    KCHECK_EQ(items[0].sockets.size(), std::size_t(1));
+    KCHECK_EQ(items[0].sockets[0].type, 3);
+    KCHECK_EQ(items[0].sockets[0].value, 55);
+    KCHECK_EQ(items[0].itemSocketOptions[2], 0);
+    KCHECK_EQ(items[0].randomSocketOptions[2], 0);
+    KCHECK(inventory.setSocketOption(uid, false, 4, 721));
+    KCHECK(inventory.setSocketOption(uid, true, 1, 843));
+    KCHECK(!inventory.setSocketOption(uid, true, -1, 1));
+    KCHECK(!inventory.setSocketOption(uid, true, 5, 1));
+    KCHECK(applySchema(temp.db).ok);
+    KCHECK(inventory.listForUnit(unit.unitUid, 1, &items));
+    KCHECK_EQ(items[0].itemSocketOptions[4], 721);
+    KCHECK_EQ(items[0].randomSocketOptions[1], 843);
+    KCHECK_EQ(items[0].sockets[0].value, 55);
+    KCHECK(inventory.removeItem(uid));
+    KCHECK_EQ(temp.db.queryValue("SELECT COUNT(*) FROM ItemSocketOptions;").asInt(), std::int64_t(0));
+}
+
 KTEST(Db, friendsAndMail) {
     TempDb temp;
     KCHECK(seedDefaultAccounts(temp.db));

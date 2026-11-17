@@ -6,6 +6,7 @@
 // query must not block the network thread.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -180,6 +181,9 @@ struct ItemRecord {
     bool equipped = false;
     std::vector<ItemAttributeRecord> attributes;
     std::vector<ItemSocketRecord> sockets;
+    // Independent original option-ID arrays; absent slots are zero.
+    std::array<int, 5> itemSocketOptions{};
+    std::array<int, 5> randomSocketOptions{};
 };
 
 class InventoryRepository {
@@ -196,6 +200,8 @@ public:
     bool setEnchant(std::int64_t itemUid, int level);
     bool setAttribute(std::int64_t itemUid, int index, int type, int value);
     bool setSocket(std::int64_t itemUid, int index, int type, int value);
+    // random=false selects the ordinary socket array; true selects the random array.
+    bool setSocketOption(std::int64_t itemUid, bool random, int index, int optionId);
     bool setEquipped(UidType unitUid, std::int64_t itemUid, bool equipped);
     std::int64_t totalEd(UidType unitUid);
 

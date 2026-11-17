@@ -590,6 +590,55 @@ KTEST(Channel, storedItemsAreReportedInTheRightBag) {
     KCHECK_EQ(wire.itemInfo.quantity, 1);
 }
 
+// Normal/random IDs have independent lengths, interior zeros and a five-slot limit.
+KTEST(Channel, inventorySocketOptionIdsAreIndependentAndTrailingTrimmed) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Raven");
+    KCHECK(uid > 0);
+    std::int64_t itemUid = 0;
+    KCHECK(f.repos().inventory.addItem(uid, 100001, 1, 3, 1, &itemUid));
+    KCHECK(f.repos().inventory.setSocket(itemUid, 0, 2, 55)); // not a wire option ID
+    KCHECK(f.repos().inventory.setSocketOption(itemUid, false, 0, 101));
+    KCHECK(f.repos().inventory.setSocketOption(itemUid, false, 2, 303));
+    KCHECK(f.repos().inventory.setSocketOption(itemUid, true, 4, 909));
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+    SelectUnitInventoryInfoNot notice;
+    KCHECK(responder.at(0, notice));
+    KCHECK_EQ(notice.items.size(), std::size_t(1));
+    const auto& info = notice.items.begin()->second.itemInfo;
+    KCHECK(info.itemSocket == (std::vector<int>{101, 0, 303}));
+    KCHECK(info.randomSocket == (std::vector<int>{0, 0, 0, 0, 909}));
+}
+
+KTEST(Channel, legacySocketStatsDoNotBecomeWireOptionIds) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Raven");
+    std::int64_t itemUid = 0;
+    KCHECK(f.repos().inventory.addItem(uid, 100001, 1, 3, 1, &itemUid));
+    KCHECK(f.repos().inventory.setSocket(itemUid, 0, 2, 55));
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+    SelectUnitInventoryInfoNot notice;
+    KCHECK(responder.at(0, notice));
+    KCHECK_EQ(notice.items.size(), std::size_t(1));
+    const auto& info = notice.items.begin()->second.itemInfo;
+    KCHECK(info.itemSocket.empty());
+    KCHECK(info.randomSocket.empty());
+}
+
 // KInventory::GetSelectUnitInventoryInfo walks ST_EQUIP..ST_END but skips ST_BANK (8) and
 // ST_E_EQUIP (9): bank and worn equipment are not part of this packet.
 KTEST(Channel, theBankAndWornEquipmentBagsAreNotSent) {
