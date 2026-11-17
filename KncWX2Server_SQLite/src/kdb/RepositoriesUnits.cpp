@@ -215,8 +215,17 @@ bool InventoryRepository::listForUnit(UidType unitUid, int category, std::vector
                                       std::string* error) {
     if (!out) return false;
     out->clear();
+    if (error) error->clear();
+    std::string queryError;
+    auto failed = [&] {
+        if (queryError.empty()) return false;
+        if (error) *error = queryError;
+        return true;
+    };
+    std::vector<ItemRecord> result;
     const Rows rows = db_.query("SELECT * FROM Items WHERE UnitUID = ? AND Category = ? ORDER BY SlotIndex;",
-                                {Value(unitUid), Value(category)}, error);
+                                {Value(unitUid), Value(category)}, &queryError);
+    if (failed()) return false;
     for (const auto& row : rows) {
         ItemRecord item;
         item.itemUid = row.at("ItemUID").asInt();
@@ -233,7 +242,8 @@ bool InventoryRepository::listForUnit(UidType unitUid, int category, std::vector
 
         const Rows attrs = db_.query(
             "SELECT AttrIndex, AttrType, AttrValue FROM ItemAttributes WHERE ItemUID = ? ORDER BY AttrIndex;",
-            {Value(item.itemUid)});
+            {Value(item.itemUid)}, &queryError);
+        if (failed()) return false;
         for (const auto& a : attrs) {
             item.attributes.push_back(ItemAttributeRecord{static_cast<int>(a.at("AttrIndex").asInt()),
                                                           static_cast<int>(a.at("AttrType").asInt()),
@@ -241,7 +251,8 @@ bool InventoryRepository::listForUnit(UidType unitUid, int category, std::vector
         }
         const Rows sockets = db_.query(
             "SELECT SocketIndex, SocketType, SocketValue FROM ItemSockets WHERE ItemUID = ? ORDER BY SocketIndex;",
-            {Value(item.itemUid)});
+            {Value(item.itemUid)}, &queryError);
+        if (failed()) return false;
         for (const auto& s : sockets) {
             item.sockets.push_back(ItemSocketRecord{static_cast<int>(s.at("SocketIndex").asInt()),
                                                     static_cast<int>(s.at("SocketType").asInt()),
@@ -249,7 +260,8 @@ bool InventoryRepository::listForUnit(UidType unitUid, int category, std::vector
         }
         const Rows options = db_.query(
             "SELECT SocketKind, SocketIndex, OptionID FROM ItemSocketOptions WHERE ItemUID = ?;",
-            {Value(item.itemUid)});
+            {Value(item.itemUid)}, &queryError);
+        if (failed()) return false;
         for (const auto& option : options) {
             const int kind = static_cast<int>(option.at("SocketKind").asInt());
             const int index = static_cast<int>(option.at("SocketIndex").asInt());
@@ -258,8 +270,9 @@ bool InventoryRepository::listForUnit(UidType unitUid, int category, std::vector
                 slots[index] = static_cast<int>(option.at("OptionID").asInt());
             }
         }
-        out->push_back(std::move(item));
+        result.push_back(std::move(item));
     }
+    *out = std::move(result);
     return true;
 }
 

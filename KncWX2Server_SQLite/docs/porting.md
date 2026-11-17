@@ -20,7 +20,7 @@ what is still missing.
 | `Common/ExpTable.*` + `ExpTable.lua` | `kgame/ExpTable`, `ExpTableData.gen.cpp` | generated from `ScriptData/ExpTable.xls` |
 | `Common/StatTable` + `ServerResource/StatTable.lua` | `kgame/StatTable`, `StatTableData.gen.cpp` | 4,198 rows, 52 classes |
 | `Common/ODBC/*`, `DBThreadManager`, `DBLayer` | `kdb/*` | one SQLite file, typed repositories |
-| `DataBase/Database1`, `Database2`, `DB_Backup/*` | `sql/001..005` | normalized, same entities |
+| `DataBase/Database1`, `Database2`, `DB_Backup/*` | `sql/001..006` | normalized, same entities |
 | `Query/InsertServerList.sql` | `db::seedDefaultTopology()` | seeded on every start |
 
 ## Wire compatibility
@@ -135,9 +135,14 @@ A fourth one is easy to miss: `GetInventoryInfo` records the category in `m_setG
 *before* looking at the items, with the comment "인벤정보는 한번만 준다!" - so a second request for
 the same unit answers with the ack alone, and the marks are only cleared by `KInventory::Clear`,
 which runs when the unit is loaded. `AccountSession::reportedInventoryCategories` mirrors that.
+Unlike the original preloaded inventory, the rewrite reads SQLite on this request: if a read fails,
+it sends an `ERR_UNKNOWN` ack without notices or once-only marks so a subsequent request can retry.
 
-The two flags on the ack (`m_bIsRecommend`, `m_bSharingBank`) come from the account, not from the
-constants the rewrite started with, so they live in `AccountOptions`.
+The rewrite derives both ack flags from `AccountOptions`. The original handler sets
+`m_bIsRecommend`, but does **not** initialize `m_bSharingBank` (`GSUserGameCommon.cpp:1176-1184`,
+`ClientPacket.h:160-162`); the bank flag loaded by `GSGameDBThread.cpp:9441-9472` belongs to a
+different packet. The deterministic account-derived ack value is therefore a deliberate deviation
+from the original uninitialized value, not proven byte-exact behavior.
 
 ### Checking the error codes
 
@@ -188,7 +193,7 @@ absolute numbers inside the test suite, so a regenerated header fails a test eve
 ## Testing
 
 ```sh
-make test                                  # 123 tests, ~2 s
+make test                                  # 125 tests, ~2 s
 build/linux/bin/knc_tests --filter Db      # one suite
 ```
 

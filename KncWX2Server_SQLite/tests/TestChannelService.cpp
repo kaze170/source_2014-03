@@ -639,6 +639,58 @@ KTEST(Channel, legacySocketStatsDoNotBecomeWireOptionIds) {
     KCHECK(info.randomSocket.empty());
 }
 
+// SQLite reads are performed on this request rather than during the original character load.
+// A failure in a later bag must not send earlier notices or consume any once-only marks.
+KTEST(Channel, inventoryReadFailureSendsErrorAndCanBeRetried) {
+    Fixture f;
+    RecordingResponder responder;
+    const UidType uid = f.createUnit(responder, "Raven");
+    KCHECK(uid > 0);
+    std::int64_t first = 0, second = 0;
+    KCHECK(f.repos().inventory.addItem(uid, 100001, 1, 0, 1, &first));
+    KCHECK(f.repos().inventory.addItem(uid, 100002, 2, 0, 1, &second));
+    KCHECK(f.repos().inventory.setSocketOption(first, false, 0, 111));
+    KCHECK(f.repos().inventory.setSocketOption(second, false, 0, 222));
+    SelectUnitReq select;
+    select.unitUid = uid;
+    Event selectEvent = f.eventWith(EGS_SELECT_UNIT_REQ, select);
+    f.service->handle(f.session, responder, selectEvent);
+
+    KCHECK(f.database.exec("ALTER TABLE ItemSocketOptions RENAME TO SavedSocketOptions;"));
+    const std::string view = "CREATE VIEW ItemSocketOptions AS SELECT ItemUID, SocketKind, "
+        "SocketIndex, CASE WHEN ItemUID=" + std::to_string(second) +
+        " THEN abs(-9223372036854775808) ELSE OptionID END AS OptionID FROM SavedSocketOptions;";
+    KCHECK(f.database.exec(view));
+    responder.clear();
+    Event event = f.makeEvent(EGS_GET_MY_INVENTORY_REQ);
+    f.service->handle(f.session, responder, event);
+    KCHECK_EQ(responder.count(), std::size_t(1));
+    KCHECK_EQ(responder.lastId(), EGS_GET_MY_INVENTORY_ACK);
+    GetMyInventoryAck ack;
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.ok, static_cast<int>(kErrUnknown));
+    KCHECK(f.session.reportedInventoryCategories.empty());
+
+    KCHECK(f.database.exec("DROP VIEW ItemSocketOptions;"));
+    KCHECK(f.database.exec("ALTER TABLE SavedSocketOptions RENAME TO ItemSocketOptions;"));
+    responder.clear();
+    f.service->handle(f.session, responder, event);
+    KCHECK_EQ(responder.count(), std::size_t(3));
+    SelectUnitInventoryInfoNot firstBag, secondBag;
+    KCHECK(responder.at(0, firstBag));
+    KCHECK(responder.at(1, secondBag));
+    KCHECK_EQ(firstBag.slotCategory, 1);
+    KCHECK_EQ(secondBag.slotCategory, 2);
+    KCHECK(responder.last(ack));
+    KCHECK_EQ(ack.ok, static_cast<int>(kNetOk));
+    KCHECK_EQ(firstBag.items.size(), std::size_t(1));
+    KCHECK_EQ(secondBag.items.size(), std::size_t(1));
+    if (!firstBag.items.empty())
+        KCHECK(firstBag.items.begin()->second.itemInfo.itemSocket == (std::vector<int>{111}));
+    if (!secondBag.items.empty())
+        KCHECK(secondBag.items.begin()->second.itemInfo.itemSocket == (std::vector<int>{222}));
+}
+
 // KInventory::GetSelectUnitInventoryInfo walks ST_EQUIP..ST_END but skips ST_BANK (8) and
 // ST_E_EQUIP (9): bank and worn equipment are not part of this packet.
 KTEST(Channel, theBankAndWornEquipmentBagsAreNotSent) {

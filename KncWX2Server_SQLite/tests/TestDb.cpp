@@ -225,6 +225,27 @@ KTEST(Db, inventoryRoundTrip) {
     KCHECK_EQ(items.size(), std::size_t(1));
 }
 
+KTEST(Db, inventoryReadReportsMissingTablesWithoutPartialResults) {
+    for (const std::string table : {"Items", "ItemAttributes", "ItemSockets", "ItemSocketOptions"}) {
+        TempDb temp;
+        KCHECK(seedDefaultAccounts(temp.db));
+        AccountRecord account;
+        KCHECK(temp.r().accounts.authenticate("test", "test", "127.0.0.1", &account) == AuthOutcome::kOk);
+        const auto unit = temp.r().units.create(account.uid, 0, "Rena", 2, 1);
+        KCHECK(unit.ok);
+        std::int64_t uid = 0;
+        KCHECK(temp.r().inventory.addItem(unit.unitUid, 1001, 1, 0, 1, &uid));
+        // Rename rather than DROP Items, preserving its foreign-key children.
+        KCHECK(temp.db.exec("ALTER TABLE " + table + " RENAME TO HiddenTable;"));
+        std::vector<ItemRecord> items(1);
+        std::string error = "stale";
+        KCHECK(!temp.r().inventory.listForUnit(unit.unitUid, 1, &items, &error));
+        KCHECK(items.empty());
+        KCHECK(error.find(table) != std::string::npos);
+        KCHECK(!temp.r().inventory.listForUnit(unit.unitUid, 1, &items));
+    }
+}
+
 // A v1 database contains stat pairs but no recoverable wire option IDs.
 KTEST(Db, socketOptionsMigrateWithoutChangingLegacyStats) {
     TempDb temp;
