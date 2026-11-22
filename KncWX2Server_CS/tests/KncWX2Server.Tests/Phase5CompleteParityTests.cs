@@ -971,6 +971,20 @@ public sealed class Phase5CompleteParityTests
     public void CashShop_And_AdminCheat_80Handler_Batch_Packets_And_DB_Work()
     {
         var region = RegionProfile.FromCode(RegionCode.TW);
+        void RoundTrip<T>(T src, Action<T> assertFn) where T : IKSerializable, new()
+        {
+            var buf = new KSerBuffer();
+            var wks = new KSerializer(region);
+            wks.BeginWriting(buf);
+            Assert.True(src.Put(wks, region));
+            wks.EndWriting();
+            var dst = new T();
+            var rks = new KSerializer(region);
+            rks.BeginReading(buf);
+            Assert.True(dst.Get(rks, region));
+            rks.EndReading();
+            assertFn(dst);
+        }
 
         RoundTrip(new KEGS_CHECK_BALANCE_ACK
         {
@@ -1213,8 +1227,8 @@ public sealed class Phase5CompleteParityTests
         RoundTrip(new KEGS_USE_INTIMACY_UP_ITEM_ACK
         {
             Ok = NetError.NET_OK,
-            UpPercent = 15.5f,
-        }, d => Assert.Equal(15.5f, d.UpPercent));
+            UpPercent = 15,
+        }, d => Assert.Equal(15, d.UpPercent));
 
         // Skill pages & skill note pages
         var skillTree = new KUserSkillTree();
@@ -1278,7 +1292,7 @@ public sealed class Phase5CompleteParityTests
 
             Assert.True(db.CheckAttendanceToday(unit1.UnitUid));
             Assert.False(db.CheckAttendanceToday(unit1.UnitUid));
-            db.SaveUnitSkillPageState(unit1.UnitUid, 2, 2, [1001]);
+            db.SaveUnitSkillPageState(unit1.UnitUid, 2, 2, new Dictionary<int, int> { [1] = 1001 });
             db.SaveUserEventState(unit1.UnitUid, 40, 3, 123456, 1, 100, 1, [10, 20, 0, 0, 0, 0], "2026-01-01");
             Assert.Equal(NetError.NET_OK, db.RecommendUser(region, unit2!.UnitUid, "HeroB2New").ok);
             Assert.Single(db.GetRecommendedByUsers(region, unit1.UnitUid));

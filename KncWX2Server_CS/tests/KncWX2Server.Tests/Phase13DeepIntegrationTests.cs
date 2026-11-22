@@ -77,6 +77,9 @@ public sealed class Phase13DeepIntegrationTests : IDisposable
                 EventId.EGS_CONNECT_REQ, new KEGS_CONNECT_REQ { Version = "TW_2014_03" });
             Assert.Equal(EventId.EGS_CONNECT_ACK, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
 
+            game.Db.VerifyOrRegisterAccount("TW", "p13user", "p13user", autoCreateOnMissing: true);
+            game.Db.SetAccountAuthLevel(RegionProfile.Taiwan, "p13user", 3);
+
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "p13user", Password = "p13user" });
             var verifyAck = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_VERIFY_ACCOUNT_ACK>(RegionProfile.Taiwan);
@@ -188,7 +191,6 @@ public sealed class Phase13DeepIntegrationTests : IDisposable
             Assert.Equal(85_000, nextBankAck.Ed);
 
             // 7. GM Cheat enforces CompanyIpTable when RestrictGmCheatByIp is active
-            gsUser.AuthLevel = 3;
             game.CompanyIpTable.RestrictGmCheatByIp = true;
             // Remove 127.0.0.1 behavior simulation: connect from 127.0.0.1 passes default allowlist
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
@@ -197,7 +199,7 @@ public sealed class Phase13DeepIntegrationTests : IDisposable
             Assert.Equal(NetError.NET_OK, cheatAck.Ok);
 
             // 8. Verify LogManager & ItemQuantityVariation recorded real activity
-            string diag = gsUser.LogManager.FormatDiagnosticSnapshot(KUserLogManager.UserLogType.HeartBeat, verifyAck.UserUid, unitUid);
+            string diag = gsUser.LogManager.FormatDiagnosticSnapshot(KUserLogManager.UserLogType.HeartBeat, verifyAck.AccountInfo.UserUid, unitUid);
             Assert.Contains("Send=[", diag);
             Assert.Contains("Proc=[", diag);
             var itemInc = gsUser.ItemQuantityVariation.GetIncreaseSnapshot();
@@ -371,11 +373,11 @@ public sealed class Phase13DeepIntegrationTests : IDisposable
             if (n == 0) throw new EndOfStreamException();
             o += n;
         }
-        var sec = new KSecureBuffer(saDb);
-        Assert.True(sec.Parse(payload));
+        var sec = new KSecureBuffer(saDb, payload);
+        Assert.True(sec.TryGetPayload(out byte[] plain));
         var ev = new KEvent();
         var ks = new KSerializer(region);
-        ks.BeginReading(new KSerBuffer(sec.PayloadBytes));
+        ks.BeginReading(new KSerBuffer(plain));
         Assert.True(ev.Get(ks, region));
         ks.EndReading();
         ev.Buffer.UnCompress();

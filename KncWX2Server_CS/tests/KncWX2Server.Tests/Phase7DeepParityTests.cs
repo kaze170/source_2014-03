@@ -6,6 +6,8 @@ using KncWX2Server.Core.Packets;
 using KncWX2Server.GameServer;
 using Xunit;
 
+using KUserSecurityManager = KncWX2Server.GameServer.KUserSecurityManager;
+
 namespace KncWX2Server.Tests;
 
 public sealed class Phase7DeepParityTests

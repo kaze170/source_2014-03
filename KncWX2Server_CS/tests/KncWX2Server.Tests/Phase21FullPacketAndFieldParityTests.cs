@@ -569,9 +569,9 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         });
 
         // Create account & two units in SQLite
-        var (_, acctUid, _, _, _) = login.Db.VerifyOrRegisterAccount(RegionCode.TW, "guildtest_acct", "pw");
-        var (_, master, _) = login.Db.CreateUnit(RegionCode.TW, acctUid, "MasterUnit", 1);
-        var (_, member, _) = login.Db.CreateUnit(RegionCode.TW, acctUid, "MemberUnit", 2);
+        var (_, acctUid, _, _, _) = login.Db.VerifyOrRegisterAccount("TW", "guildtest_acct", "pw", autoCreateOnMissing: true);
+        var (_, master, _) = login.Db.CreateUnit(RegionProfile.Taiwan, acctUid, "MasterUnit", 1);
+        var (_, member, _) = login.Db.CreateUnit(RegionProfile.Taiwan, acctUid, "MemberUnit", 2);
         Assert.NotNull(master);
         Assert.NotNull(member);
 
@@ -684,7 +684,7 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
             .ToList();
         Assert.Contains(agencyMsgs, m => m.MessageType == KEGS_PSHOP_AGENCY_MESSAGE_NOT.PAMT_SELL_ITEM);
         Assert.Contains(agencyMsgs, m => m.MessageType == KEGS_PSHOP_AGENCY_MESSAGE_NOT.PAMT_SOLD_OUT);
-        Assert.False(shop.ActiveBuyerUnitUids.ContainsKey(member.UnitUid));
+        Assert.False(shop.ActiveBuyerUnitUids.Contains(member.UnitUid));
 
         // 3. KEvent cross-DTO transcoding & KUserDungeonManager.IsHenirDungeon
         var ev = new KEvent();
@@ -752,10 +752,10 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
             fwdRefresh.GetPayload<KESR_SCRIPT_REFRESH_ORDER_NOT>(RegionProfile.Taiwan).OrderType);
 
         // 6. Archuangel coin event letter DB check & packet round-trips
-        Assert.False(db.HasTodayEventLetter(master.UnitUid));
-        db.SendLetter(RegionProfile.Taiwan, master.UnitUid, master.NickName, master.UnitUid,
+        Assert.False(login.Db.HasTodayEventLetter(master.UnitUid));
+        login.Db.SendLetter(RegionProfile.Taiwan, master.UnitUid, master.NickName, master.UnitUid,
             "Angel Coin", "Event Reward", 834, 1, 0, KPostItemInfo.LtEvent);
-        Assert.True(db.HasTodayEventLetter(master.UnitUid));
+        Assert.True(login.Db.HasTodayEventLetter(master.UnitUid));
 
         var coinAck = RoundTrip(new KEGS_CHECK_THE_ARCHUANGEL_S_COIN_EVENT_LETTER_ACK
         {
@@ -995,7 +995,7 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         {
             var db = new SqliteDatabaseManager(dbPath);
             db.InitializeAndSeed();
-            var (_, uid, _) = db.CreateAccount("TW", "cb_user_test", "pw123");
+            var (_, uid, _) = db.CreateAccount(RegionProfile.Taiwan, "cb_user_test", "pw123");
             db.SaveAccountComeBackReward(uid, 2, now.AddDays(15).ToString("O"));
             db.UpdateAccountLoginTimestamp(uid, now);
             var (lastLogin, step, endStr) = db.GetAccountComeBackInfo(uid);
@@ -1155,14 +1155,27 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         Assert.DoesNotContain(7001L, ddRoom.GetDeadUnitUids());
 
         // 9. Inventory RandomSocketIds, Period, & DeleteUnitCategoryItems DB round-trip
-        var testInvItem = db.GrantUnitItem(uid, 78801, 1);
-        var updatedRandom = db.UpdateItemRandomSockets(uid, testInvItem.ItemUid, [3720]);
-        Assert.Contains(3720, updatedRandom.ItemInfo.RandomSockets);
-        var updatedPeriod = db.UpdateItemPeriod(uid, testInvItem.ItemUid, 30, "2026-12-20 00:00:00");
-        Assert.Equal((short)30, updatedPeriod.ItemInfo.Period);
-        Assert.Equal("2026-12-20 00:00:00", updatedPeriod.ItemInfo.ExpirationDate);
-        db.GrantUnitItem(uid, 70001, 1, slotCategory: 12);
-        Assert.True(db.DeleteUnitCategoryItems(uid, 12) >= 1);
+        string invDbPath = Path.Combine(Path.GetTempPath(), $"knc_inv_rt_{Guid.NewGuid():N}.db");
+        try
+        {
+            var invDb = new SqliteDatabaseManager(invDbPath);
+            invDb.InitializeAndSeed();
+            var (_, invAcctUid, _) = invDb.CreateAccount(RegionProfile.Taiwan, "p21_inv_user", "pw123");
+            var (_, invUnit, _) = invDb.CreateUnit(RegionProfile.Taiwan, invAcctUid, "P21InvUnit", 1);
+            long invUid = invUnit!.UnitUid;
+            var testInvItem = invDb.GrantUnitItem(invUid, 78801, 1);
+            var updatedRandom = invDb.UpdateItemRandomSockets(invUid, testInvItem.ItemUid, [3720]);
+            Assert.Contains(3720, updatedRandom.ItemInfo.RandomSockets);
+            var updatedPeriod = invDb.UpdateItemPeriod(invUid, testInvItem.ItemUid, 30, "2026-12-20 00:00:00");
+            Assert.Equal((short)30, updatedPeriod.ItemInfo.Period);
+            Assert.Equal("2026-12-20 00:00:00", updatedPeriod.ItemInfo.ExpirationDate);
+            invDb.GrantUnitItem(invUid, 70001, 1, slotCategory: 12);
+            Assert.True(invDb.DeleteUnitCategoryItems(invUid, 12) >= 1);
+        }
+        finally
+        {
+            if (File.Exists(invDbPath)) File.Delete(invDbPath);
+        }
 
         // 10. TrainingCenterTable, CnHackingCheckManager, DungeonEventManager, CheckSumManager, HCT/NetError parity
         var tcTable = new KTrainingCenterTable();
@@ -1446,7 +1459,9 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         var script = new KScriptManager();
         dt.BindToLua(script, "DropTable");
         script.DoString("DropTable:AddManyEDDropNpc(5501, 2.5, 4)");
-        Assert.Equal((2.5f, 4.0f), dt.GetManyEdDropNpcFactor(5501));
+        Assert.True(dt.TryGetManyEdDropMultiplier(5501, out float edMult, out float cntMult));
+        Assert.Equal(2.5f, edMult);
+        Assert.Equal(4.0f, cntMult);
 
         gb.ShutDown();
     }
@@ -1470,7 +1485,7 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
 
         var partyMgr = new KCnPartyManager();
         var party = partyMgr.CreateParty(
-            new KCreatePartyInfo { DungeonId = 30000, MaxSlot = 4 },
+            new KCreatePartyInfo { DungeonId = 30000 },
             new KPartyUserInfo { UnitUid = 7001, NickName = "Host", Host = true, Ready = true });
         party.AddFever(KCnParty.MaxFeverPoint);
         Assert.True(party.IsFeverTime);
@@ -1597,7 +1612,8 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         var evOrder = new KEvent();
         evOrder.SetInProcess(PerformerId.PI_GS_SERVER, null, EventId.ESR_ORDER_TO_GAME_SERVER_NOT,
             new KESR_SCRIPT_REFRESH_ORDER_NOT { OrderType = KESR_SCRIPT_REFRESH_ORDER_NOT.OT_GS_EXP_TABLE });
-        gs.ProcessEvent(evOrder);
+        gs.QueueingEvent(evOrder);
+        gs.Tick();
 
         Assert.Contains(KESR_SCRIPT_REFRESH_ORDER_NOT.OT_GS_EXP_TABLE, receivedOrders);
         Assert.Contains(KESR_SCRIPT_REFRESH_ORDER_NOT.OT_CN_DROP_TABLE, centerOrders);
@@ -1926,7 +1942,7 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         router.RegisterRoute(PerformerId.PI_GS_USER, ev => { gsUserEvents.Add(ev); return true; });
 
         login.PersonalShopAgencyManager.CreateAgencyShop(8001, "Seller8001", "Agency8001",
-            [new KAgencyShopItemDto { ItemUid = 1, ItemId = 70001, Quantity = 1, PricePerUnit = 100 }],
+            [new KPersonalShopAgencyManager.AgencyShopItem { ItemUid = 1, ItemId = 70001, Quantity = 1, PricePerUnit = 100 }],
             TimeSpan.FromMinutes(30));
 
         router.Send(PerformerId.PI_GS_USER, 8001, PerformerId.PI_LOGIN_SERVER, login.Uid,
@@ -2242,7 +2258,7 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
                 EventId.EGS_CONNECT_REQ, new KEGS_CONNECT_REQ { Version = "TW_2014_03" });
             Assert.Equal(EventId.EGS_CONNECT_ACK, (await TestReadEventAsync(stream, sa, RegionProfile.Taiwan)).EventId);
 
-            game.Db.VerifyOrRegisterAccount(RegionProfile.Taiwan, "p21_erm_user", "pw", false);
+            game.Db.VerifyOrRegisterAccount("TW", "p21_erm_user", "pw", autoCreateOnMissing: true);
             await TestSendAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "p21_erm_user", Password = "pw" });
             Assert.Equal(EventId.EGS_VERIFY_ACCOUNT_ACK, (await TestReadEventAsync(stream, sa, RegionProfile.Taiwan)).EventId);
@@ -2352,9 +2368,9 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
         }
         finally
         {
-            game.Stop();
-            global.Stop();
-            center.Stop();
+            game.ShutDown();
+            global.ShutDown();
+            center.ShutDown();
         }
     }
 
@@ -2413,11 +2429,11 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
             if (n == 0) throw new EndOfStreamException();
             o += n;
         }
-        var sec = new KSecureBuffer(saDb);
-        Assert.True(sec.Parse(payload));
+        var sec = new KSecureBuffer(saDb, payload);
+        Assert.True(sec.TryGetPayload(out byte[] plain));
         var ev = new KEvent();
         var ks = new KSerializer(region);
-        ks.BeginReading(new KSerBuffer(sec.PayloadBytes));
+        ks.BeginReading(new KSerBuffer(plain));
         Assert.True(ev.Get(ks, region));
         ks.EndReading();
         ev.Buffer.UnCompress();

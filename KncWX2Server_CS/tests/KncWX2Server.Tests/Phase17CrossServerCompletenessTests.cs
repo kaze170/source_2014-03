@@ -180,10 +180,10 @@ public sealed class Phase17CrossServerCompletenessTests : IDisposable
         login.Init();
         login.Uid = 100;
 
-        var (_, accUid1, _, _, _) = login.Db.VerifyOrRegisterAccount(RegionCode.TW, "u1", "pw", autoCreateOnMissing: true);
+        var (_, accUid1, _, _, _) = login.Db.VerifyOrRegisterAccount("TW", "u1", "pw", autoCreateOnMissing: true);
         var (_, u1, _) = login.Db.CreateUnit(RegionProfile.Taiwan, accUid1, "AliceTW", 1);
         long unitUid1 = u1!.UnitUid;
-        var (_, accUid2, _, _, _) = login.Db.VerifyOrRegisterAccount(RegionCode.TW, "u2", "pw", autoCreateOnMissing: true);
+        var (_, accUid2, _, _, _) = login.Db.VerifyOrRegisterAccount("TW", "u2", "pw", autoCreateOnMissing: true);
         var (_, u2, _) = login.Db.CreateUnit(RegionProfile.Taiwan, accUid2, "BobTW", 2);
         long unitUid2 = u2!.UnitUid;
 

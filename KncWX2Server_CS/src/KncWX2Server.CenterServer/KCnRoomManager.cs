@@ -19,6 +19,16 @@ public enum RoomState : sbyte
 
 public sealed class KCnRoom
 {
+    public enum RoomType : sbyte
+    {
+        RtPvp = 0,
+        RtDungeon = 1,
+        RtTrainingCenter = 2,
+        RtBattleField = 3,
+        RtWeddingHall = 4,
+        RtSquare = 5,
+    }
+
     public sealed class SlotCombatStats
     {
         public long UnitUid { get; set; }

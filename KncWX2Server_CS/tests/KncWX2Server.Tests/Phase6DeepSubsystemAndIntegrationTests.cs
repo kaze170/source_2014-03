@@ -63,7 +63,7 @@ public sealed class Phase6DeepSubsystemAndIntegrationTests
             Assert.True(abuser.IsItemAbuser);
             Assert.True(abuser.IsMonitoringAbuser);
 
-            Assert.Equal(500, Enumerable.Range(0, 500).Select(_ => abuser.RecordTrafficEvent(EventId.EGS_STATE_CHANGE_FIELD_REQ)).Last());
+            Assert.Equal(500, Enumerable.Range(0, 500).Select(_ => abuser.RecordTrafficEvent((ushort)EventId.EGS_STATE_CHANGE_FIELD_REQ)).Last());
             Assert.True(abuser.IsTrafficAbuser);
 
             abuser.IncreaseHackingCheckCount(1, out bool b1);
@@ -93,7 +93,7 @@ public sealed class Phase6DeepSubsystemAndIntegrationTests
             SubQuestGoals =
             [
                 new KUserQuestManager.SubQuestGoal { SubQuestId = 1, Type = KUserQuestManager.SubQuestType.SqtNpcHunt, TargetId = 101, TargetCount = 2 },
-                new KUserQuestManager.SubQuestGoal { SubQuestId = 2, Type = KUserQuestManager.SubQuestType.SqtDungeonClear, TargetId = 30000, TargetCount = 1, TargetDifficulty = 1 },
+                new KUserQuestManager.SubQuestGoal { SubQuestId = 2, Type = KUserQuestManager.SubQuestType.SqtDungeonClearCount, TargetId = 30000, TargetCount = 1, TargetDifficulty = 1 },
                 new KUserQuestManager.SubQuestGoal { SubQuestId = 3, Type = KUserQuestManager.SubQuestType.SqtItemEnchant, TargetId = 0, TargetCount = 1 },
             ],
         });
@@ -217,7 +217,7 @@ public sealed class Phase6DeepSubsystemAndIntegrationTests
             // Route crystal increment from GameServer -> GlobalServer
             router.Send(PerformerId.PI_GS_SERVER, game.Uid, PerformerId.PI_GB_SERVER, global.Uid,
                 EventId.EGB_INCREASE_THE_PROTECTED_CRYSTAL_COUNT_NOT,
-                new KEGB_INCREASE_THE_PROTECTED_CRYSTAL_COUNT_NOT { DeltaCrystalCount = 12 }, RegionCode.TW);
+                new KEGB_INCREASE_THE_PROTECTED_CRYSTAL_COUNT_NOT { DeltaCrystalCount = 12 });
             global.Tick();
             Assert.Equal(12, global.WorldMissionManager.ProtectedCrystalCount);
             Assert.Equal(3, global.WorldMissionManager.GetDefenseRewardBuffLevel());
@@ -225,7 +225,7 @@ public sealed class Phase6DeepSubsystemAndIntegrationTests
             // Query world mission snapshot from GameServer -> GlobalServer -> GameServer
             router.Send(PerformerId.PI_GS_SERVER, game.Uid, PerformerId.PI_GB_SERVER, global.Uid,
                 EventId.EGB_GET_MISSION_INFO_REQ,
-                new KEGB_GET_MISSION_INFO_REQ { RequesterServerUid = game.Uid }, RegionCode.TW);
+                new KEGB_GET_MISSION_INFO_REQ { RequesterServerUid = game.Uid });
             global.Tick();
             game.Tick();
 
@@ -277,7 +277,7 @@ public sealed class Phase6DeepSubsystemAndIntegrationTests
 
             // Guild level curve & permissions
             var reg = RegionProfile.FromCode(RegionCode.TW);
-            var (_, userUid, _, _, _) = login.Db.VerifyOrRegisterAccount(RegionCode.TW, "gmaster", "pass");
+            var (_, userUid, _, _, _) = login.Db.VerifyOrRegisterAccount("TW", "gmaster", "pass");
             var (cuOk, masterUnit, _) = login.Db.CreateUnit(reg, userUid, "GuildMaster", 1);
             Assert.True(cuOk && masterUnit != null);
 

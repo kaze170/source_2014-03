@@ -253,7 +253,7 @@ public sealed class Phase18FullCrossServerParityTests : IDisposable
             {
                 SystemUid = 1,
                 UserInfo = new KLocalRankingUserInfo { UserUid = 9001, Category = 1 },
-                UnitInfo = new KLocalRankingUnitInfo { UnitUid = 9001, NickName = "HenirHero", Level = 70, Point = [1500, 300] },
+                UnitInfo = new KLocalRankingUnitInfo { UnitUid = 9001, NickName = "HenirHero", Level = 70, Point = { [0] = 1500, [1] = 300 } },
             });
         router.Send(PerformerId.PI_GS_USER, 9001, PerformerId.PI_LOGIN_SERVER, 0,
             EventId.EGS_LOCAL_RANKING_INQUIRY_REQ, new KEGS_LOCAL_RANKING_INQUIRY_REQ

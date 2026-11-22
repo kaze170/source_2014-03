@@ -183,7 +183,7 @@ public sealed class Phase15LuaAndInventoryParityTests : IDisposable
                 EventId.EGS_CONNECT_REQ, new KEGS_CONNECT_REQ { Version = "TW_2014_03" });
             Assert.Equal(EventId.EGS_CONNECT_ACK, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
 
-            game.Db.VerifyOrRegisterAccount(RegionProfile.Taiwan, "p15user", "p15user", false);
+            game.Db.VerifyOrRegisterAccount("TW", "p15user", "p15user", autoCreateOnMissing: true);
             game.Db.SetAccountAuthLevel(RegionProfile.Taiwan, "p15user", 3);
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "p15user", Password = "p15user" });
@@ -330,15 +330,15 @@ public sealed class Phase15LuaAndInventoryParityTests : IDisposable
                 EventId.EGS_ATTRIB_ATTACH_ITEM_REQ, new KEGS_ATTRIB_ATTACH_ITEM_REQ { DestItemUid = swordSlot.ItemUid, AttachItemUid = redShard.ItemUid });
             var attrAttachAck = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_ATTRIB_ATTACH_ITEM_ACK>(RegionProfile.Taiwan);
             Assert.Equal(NetError.NET_OK, attrAttachAck.Ok);
-            Assert.Equal((sbyte)KSocketItemManager.EnchantElement.Blaze, attrAttachAck.InventorySlotInfo[0].ItemInfo.AttribEnchantInfo[0]);
+            Assert.Equal((sbyte)KSocketItemManager.EnchantElement.Blaze, attrAttachAck.InventorySlotInfo[0].ItemInfo.AttribEnchantInfo.AttribEnchant0);
 
             var dualScroll = game.Db.GrantUnitItem(unitUid, 133371, 1); // Blaze + Wind scroll from AttribAttachTable.lua
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_ATTRIB_ATTACH_ITEM_REQ, new KEGS_ATTRIB_ATTACH_ITEM_REQ { DestItemUid = swordSlot.ItemUid, AttachItemUid = dualScroll.ItemUid });
             var dualAttrAck = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_ATTRIB_ATTACH_ITEM_ACK>(RegionProfile.Taiwan);
             Assert.Equal(NetError.NET_OK, dualAttrAck.Ok);
-            Assert.Equal((sbyte)KSocketItemManager.EnchantElement.Blaze, dualAttrAck.InventorySlotInfo[0].ItemInfo.AttribEnchantInfo[0]);
-            Assert.Equal((sbyte)KSocketItemManager.EnchantElement.Wind, dualAttrAck.InventorySlotInfo[0].ItemInfo.AttribEnchantInfo[1]);
+            Assert.Equal((sbyte)KSocketItemManager.EnchantElement.Blaze, dualAttrAck.InventorySlotInfo[0].ItemInfo.AttribEnchantInfo.AttribEnchant0);
+            Assert.Equal((sbyte)KSocketItemManager.EnchantElement.Wind, dualAttrAck.InventorySlotInfo[0].ItemInfo.AttribEnchantInfo.AttribEnchant1);
 
             long listedUid = game.Db.CreatePersonalShopListing(RegionProfile.Taiwan, unitUid, "P15Hero", 10025, 2, 1000);
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
@@ -615,11 +615,11 @@ public sealed class Phase15LuaAndInventoryParityTests : IDisposable
             if (n == 0) throw new EndOfStreamException();
             o += n;
         }
-        var sec = new KSecureBuffer(saDb);
-        Assert.True(sec.Parse(payload));
+        var sec = new KSecureBuffer(saDb, payload);
+        Assert.True(sec.TryGetPayload(out byte[] plain));
         var ev = new KEvent();
         var ks = new KSerializer(region);
-        ks.BeginReading(new KSerBuffer(sec.PayloadBytes));
+        ks.BeginReading(new KSerBuffer(plain));
         Assert.True(ev.Get(ks, region));
         ks.EndReading();
         ev.Buffer.UnCompress();

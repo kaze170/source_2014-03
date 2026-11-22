@@ -199,7 +199,7 @@ public sealed class Phase16WireAndGameplayCompletenessTests : IDisposable
                 EventId.EGS_CONNECT_REQ, new KEGS_CONNECT_REQ { Version = "TW_2014_03" });
             Assert.Equal(EventId.EGS_CONNECT_ACK, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
 
-            game.Db.VerifyOrRegisterAccount(RegionProfile.Taiwan, "p16gm", "p16gm", false);
+            game.Db.VerifyOrRegisterAccount("TW", "p16gm", "p16gm", autoCreateOnMissing: true);
             game.Db.SetAccountAuthLevel(RegionProfile.Taiwan, "p16gm", 3);
 
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
@@ -527,11 +527,11 @@ public sealed class Phase16WireAndGameplayCompletenessTests : IDisposable
             if (n == 0) throw new EndOfStreamException();
             o += n;
         }
-        var sec = new KSecureBuffer(saDb);
-        Assert.True(sec.Parse(payload));
+        var sec = new KSecureBuffer(saDb, payload);
+        Assert.True(sec.TryGetPayload(out byte[] plain));
         var ev = new KEvent();
         var ks = new KSerializer(region);
-        ks.BeginReading(new KSerBuffer(sec.PayloadBytes));
+        ks.BeginReading(new KSerBuffer(plain));
         Assert.True(ev.Get(ks, region));
         ks.EndReading();
         ev.Buffer.UnCompress();

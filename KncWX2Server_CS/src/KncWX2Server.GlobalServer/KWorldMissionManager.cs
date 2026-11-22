@@ -26,6 +26,7 @@ public sealed class KWorldMissionManager
     public sealed record DefenseOpenTime(DayOfWeek Day, int StartHour, int StartMinute, int DurationMinutes);
 
     private readonly Dictionary<DayOfWeek, List<DefenseOpenTime>> _openTimes = new();
+    public IReadOnlyDictionary<DayOfWeek, List<DefenseOpenTime>> OpenTimes => _openTimes;
     private readonly KLottery _earthQuakeLottery = new();
     private readonly object _sync = new();
 
