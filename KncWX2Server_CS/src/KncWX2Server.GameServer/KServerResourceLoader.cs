@@ -152,8 +152,10 @@ public static class KServerResourceLoader
                 loaded++;
         }
 
-        loaded += game.Center.LoadServerResources(resourceBaseDir, includeHeavyDropTables: includeHeavyTables);
-        loaded += game.Global.LoadServerResources(resourceBaseDir);
+        int gameLoaded = loaded;
+        int centerLoaded = game.Center.LoadServerResources(resourceBaseDir, includeHeavyDropTables: includeHeavyTables);
+        int globalLoaded = game.Global.LoadServerResources(resourceBaseDir);
+        loaded += centerLoaded + globalLoaded;
 
         string? floatFuncPath = KScriptManager.ResolveServerResourceFile("KFLOAT_FUNC.lua", game.Region, resourceBaseDir);
         if (floatFuncPath != null && File.Exists(floatFuncPath))
@@ -163,7 +165,7 @@ public static class KServerResourceLoader
             game.ClientScripts[0] = raw;
         }
 
-        KLog.Cout($"[KServerResourceLoader] Loaded {loaded} Lua resource scripts for region {game.Region.Code}.");
+        KLog.Cout($"[KServerResourceLoader] Executed {loaded} Lua resource scripts for region {game.Region.Code} (Game={gameLoaded}, Center={centerLoaded}, Global={globalLoaded}); execution does not guarantee full data compatibility.");
         return loaded;
     }
 

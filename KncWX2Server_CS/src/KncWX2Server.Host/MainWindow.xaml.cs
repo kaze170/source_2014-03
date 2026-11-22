@@ -131,9 +131,8 @@ public partial class MainWindow : Window
             groupId = _channelServer.Region.Region == RegionCode.CN ? 1 : 0;
 
         string? luaPath = string.IsNullOrWhiteSpace(LuaPathTextBox.Text) ? null : LuaPathTextBox.Text.Trim();
-        _centerServer.LoadServerResources(includeHeavyDropTables: true);
-        _globalServer.LoadServerResources();
         _loginServer.LoadServerResources();
+        // Game resource loading also loads the shared Center and Global managers.
         _gameServer.LoadServerResources(includeHeavyTables: true);
         _centerServer.Start(serverGroupId: groupId);
         _globalServer.Start(serverGroupId: groupId);

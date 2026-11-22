@@ -31,6 +31,39 @@ public sealed class Phase15LuaAndInventoryParityTests : IDisposable
     }
 
     [Fact]
+    public void ResourceResolver_PrefersRegionThenCommon()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"knc_resolve_{Guid.NewGuid():N}");
+        string name = $"test_{Guid.NewGuid():N}.lua";
+        string twDir = Path.Combine(dir, "TW");
+        Directory.CreateDirectory(twDir);
+        string common = Path.Combine(dir, name);
+        string regional = Path.Combine(twDir, name);
+        try
+        {
+            File.WriteAllText(common, "value = 1");
+            File.WriteAllText(regional, "value = 2");
+            Assert.Equal(regional, KncWX2Server.Core.Scripting.KScriptManager.ResolveServerResourceFile(name, RegionProfile.Taiwan, dir));
+            File.Delete(regional);
+            Assert.Equal(common, KncWX2Server.Core.Scripting.KScriptManager.ResolveServerResourceFile(name, RegionProfile.Taiwan, dir));
+            File.Delete(common);
+            Assert.Null(KncWX2Server.Core.Scripting.KScriptManager.ResolveServerResourceFile(name, RegionProfile.Taiwan, dir));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TwResultDataNew_ExecutesWithCenterResultProcessBinding()
+    {
+        var script = new KncWX2Server.Core.Scripting.KScriptManager();
+        KResultProcess.BindToLua(script);
+        Assert.True(script.DoServerResourceFile("ResultData_new.lua", RegionProfile.Taiwan));
+    }
+
+    [Fact]
     public void GameResourceLoader_DoesNotExecuteLegacyCenterResultData()
     {
         // The TW C++ center uses ResultData_new.lua when SERV_DUNGEON_RANK_NEW

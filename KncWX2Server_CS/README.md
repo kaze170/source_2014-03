@@ -38,3 +38,21 @@ dotnet run --project src/KncWX2Server.Host/KncWX2Server.Host.csproj
 Seeded SQLite dev accounts across all regions (`TW`, `HK`, `CN`, `JP`):
 - `test01` / `test01` (AuthLevel `2`)
 - `gm01` / `gm01` (AuthLevel `5`)
+
+### ServerResource diagnostics
+
+The WPF host selects `TW` by default and loads Login plus Game resources at startup;
+the Game loader also loads Center and Global resources, while Channel loads its
+own resources on start. `Lua Config` is a Channel configuration **file**, not
+the ServerResource directory. Resource discovery checks the working directory
+and executable directory and their ancestors for `KncWX2Server/ServerResource`
+or `ServerResource`. Within a root, the regional file is preferred to the common
+file. A programmatic `resourceBaseDir` is searched first, but missing files can
+still fall back to automatically discovered roots.
+
+At log level 2, `[ServerResource] Executed:` records the actual path. Missing
+files are warnings and may be optional; Lua errors are reported separately.
+The Game/Center/Global counts report successful script execution, not complete
+feature compatibility or a guarantee that every table was applied. Resource
+loaders use explicit file lists and bindings, not every file in the directory.
+Some results are implemented in C# rather than evaluated from Lua functions.

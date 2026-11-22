@@ -797,7 +797,14 @@ public sealed class KScriptManager
     public bool DoServerResourceFile(string fileName, RegionProfile region, string? explicitBaseDir = null)
     {
         string? resolved = ResolveServerResourceFile(fileName, region, explicitBaseDir);
-        return resolved != null && DoFile(resolved);
+        if (resolved == null)
+        {
+            KLog.Cwarn($"[ServerResource] Not found for {region.Code}: {fileName} (may be optional)");
+            return false;
+        }
+        bool loaded = DoFile(resolved);
+        if (loaded) KLog.Clog($"[ServerResource] Executed: {resolved}");
+        return loaded;
     }
 
     public bool DoFile(string filePath)
