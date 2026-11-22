@@ -3838,7 +3838,7 @@ public sealed class KEGS_ADMIN_HERO_PVP_USER_ADD_ACK : IKSerializable
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
-        if (!ks.GetList(UserList, static s => { bool ok1 = s.Get(out long a); bool ok2 = s.Get(out string b); return (ok1 && ok2, (a, b)); })) return false;
+        if (!ks.GetList(UserList, static s => { bool ok1 = s.Get(out long a); bool ok2 = s.GetWideString(out string b); return (ok1 && ok2, (a, b)); })) return false;
         return true;
     }
 }
@@ -3855,7 +3855,7 @@ public sealed class KEGS_ADMIN_HERO_PVP_USER_REMOVE_ACK : IKSerializable
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
-        if (!ks.GetList(UserList, static s => { bool ok1 = s.Get(out long a); bool ok2 = s.Get(out string b); return (ok1 && ok2, (a, b)); })) return false;
+        if (!ks.GetList(UserList, static s => { bool ok1 = s.Get(out long a); bool ok2 = s.GetWideString(out string b); return (ok1 && ok2, (a, b)); })) return false;
         return true;
     }
 }
@@ -3872,7 +3872,7 @@ public sealed class KEGS_ADMIN_HERO_PVP_USER_REMOVE_REQ : IKSerializable
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
-        if (!ks.GetList(UserList, static s => { bool ok1 = s.Get(out long a); bool ok2 = s.Get(out string b); return (ok1 && ok2, (a, b)); })) return false;
+        if (!ks.GetList(UserList, static s => { bool ok1 = s.Get(out long a); bool ok2 = s.GetWideString(out string b); return (ok1 && ok2, (a, b)); })) return false;
         return true;
     }
 }

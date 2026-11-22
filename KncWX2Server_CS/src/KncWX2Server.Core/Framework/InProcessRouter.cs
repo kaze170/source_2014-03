@@ -45,13 +45,18 @@ public sealed class InProcessRouter
     public bool HasRoute(uint performerId)
         => _performers.ContainsKey(performerId) || _customRoutes.ContainsKey(performerId);
 
+    public void StopTcpBridge()
+    {
+        TcpBridge?.Dispose();
+        TcpBridge = null;
+    }
+
     public void UnregisterAll()
     {
         _performers.Clear();
         _customRoutes.Clear();
         _channelActorManager = null;
-        TcpBridge?.Dispose();
-        TcpBridge = null;
+        StopTcpBridge();
     }
 
     public bool Send(uint fromPerformerId, long fromUid, KEvent ev)

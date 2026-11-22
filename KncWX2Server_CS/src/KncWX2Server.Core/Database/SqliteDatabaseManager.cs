@@ -2471,7 +2471,7 @@ public sealed class SqliteDatabaseManager
             {
                 ItemId = meta.itemId,
                 Quantity = 1,
-                EnchantLevel = newEnchantLevel,
+                EnchantLevel = (sbyte)newEnchantLevel,
             },
         };
     }
@@ -2658,7 +2658,7 @@ public sealed class SqliteDatabaseManager
             {
                 ItemId = meta.itemId,
                 Quantity = 1,
-                EnchantLevel = meta.enchantLevel,
+                EnchantLevel = (sbyte)meta.enchantLevel,
                 ItemSockets = socketOptions.ToList(),
             },
         };
@@ -2697,7 +2697,7 @@ public sealed class SqliteDatabaseManager
             {
                 ItemId = meta.itemId,
                 Quantity = 1,
-                EnchantLevel = meta.enchantLevel,
+                EnchantLevel = (sbyte)meta.enchantLevel,
                 AttribEnchantInfo = new KItemAttributeEnchantInfo { AttribEnchant0 = attribId },
             },
         };

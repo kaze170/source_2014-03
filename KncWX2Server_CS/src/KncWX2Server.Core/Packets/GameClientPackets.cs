@@ -9294,7 +9294,7 @@ public sealed class KEGS_BINGO_EVENT_INFO_ACK : IKSerializable
         if (!ks.Get(out int ok) || !ks.Get(out int lc) || !ks.Get(out int lr) ||
             !ks.Get(out int mc) || !ks.Get(out int rc) ||
             !ks.GetList(BingoBoard, static s => (s.Get(out byte b), b)) ||
-            !ks.GetList(PresentInfo, static s => (s.Get(out int pid) && s.Get(out bool acq), (pid, acq))))
+            !ks.GetList(PresentInfo, static s => { bool ok1 = s.Get(out int pid); bool ok2 = s.Get(out bool acq); return (ok1 && ok2, (pid, acq)); }))
             return false;
         Ok = ok; LotteryChance = lc; LotteryRecord = lr; MixChance = mc; ResetChance = rc;
         return true;
@@ -10402,7 +10402,7 @@ public sealed class KEGS_ADMIN_HERO_PVP_USER_ADD_REQ : IKSerializable
         ks.PutList(UserList, static (s, item) => s.Put(item.ServerGroupId) && s.PutWideString(item.NickName));
 
     public bool Get(KSerializer ks, RegionProfile region) =>
-        ks.GetList(UserList, static s => (s.Get(out long sg) && s.GetWideString(out var nick), (sg, nick)));
+        ks.GetList(UserList, static s => { bool ok1 = s.Get(out long sg); bool ok2 = s.GetWideString(out var nick); return (ok1 && ok2, (sg, nick)); });
 }
 
 public sealed class KEGS_ADMIN_HERO_PVP_USER_CONNECTION_NOT : IKSerializable
