@@ -31,6 +31,38 @@ public sealed class Phase15LuaAndInventoryParityTests : IDisposable
     }
 
     [Fact]
+    public void GameResourceLoader_DoesNotExecuteLegacyCenterResultData()
+    {
+        // The TW C++ center uses ResultData_new.lua when SERV_DUNGEON_RANK_NEW
+        // is defined. ResultData.lua must not be executed by the game loader.
+        string dir = Path.Combine(Path.GetTempPath(), $"knc_result_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(dir, "TW"));
+        string legacy = Path.Combine(dir, "TW", "ResultData.lua");
+        File.WriteAllText(legacy, "ResultProcess:AddDungeonPartyBonus(0.4, 1.0, 1.4)");
+        var errors = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        void OnLog(KncWX2Server.Core.Logging.LogEntry entry)
+        {
+            if (entry.Category == KncWX2Server.Core.Logging.LogCategory.Cerr && entry.Message.Contains(legacy))
+                errors.Enqueue(entry.Message);
+        }
+        KncWX2Server.Core.Logging.KLog.OnLog += OnLog;
+        try
+        {
+            var router = new InProcessRouter();
+            using var center = new KCenterServer(RegionCode.TW, router);
+            using var global = new KGlobalServer(RegionCode.TW, router);
+            using var game = new KGameServer(RegionCode.TW, _dbPath, router, center, global);
+            game.LoadServerResources(dir, includeHeavyTables: false);
+            Assert.Empty(errors);
+        }
+        finally
+        {
+            KncWX2Server.Core.Logging.KLog.OnLog -= OnLog;
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void MoonSharp_LoadsOriginalTwServerResourceLuaTables()
     {
         var router = new InProcessRouter();

@@ -133,7 +133,6 @@ public static class KServerResourceLoader
             "RoomListData.lua",
             "KeepItem.lua",
             "KFLOAT_FUNC.lua",
-            "ResultData.lua",
             "TrainingCenterTemplet.lua",
             "LogConfig.lua",
             "ServerMornitoringConfig.lua",
