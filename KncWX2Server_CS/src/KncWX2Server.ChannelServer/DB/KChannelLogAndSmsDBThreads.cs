@@ -1,3 +1,4 @@
+using KncWX2Server.ChannelServer;
 using KncWX2Server.Core.Database;
 using KncWX2Server.Core.Events;
 using KncWX2Server.Core.Framework;

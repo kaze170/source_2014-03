@@ -5,6 +5,7 @@ using KncWX2Server.Core.Logging;
 using KncWX2Server.Core.Packets;
 using KncWX2Server.Core.Region;
 using KncWX2Server.Core.Scripting;
+using KncWX2Server.Core.Serialization;
 using MoonSharp.Interpreter;
 
 namespace KncWX2Server.GameServer;

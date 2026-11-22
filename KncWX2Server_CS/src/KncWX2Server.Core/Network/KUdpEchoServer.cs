@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using KncWX2Server.Core.Events;
+using KncWX2Server.Core.Framework;
 using KncWX2Server.Core.Logging;
 using KncWX2Server.Core.Serialization;
 

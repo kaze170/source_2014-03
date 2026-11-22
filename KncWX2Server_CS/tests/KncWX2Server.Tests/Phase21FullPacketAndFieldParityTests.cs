@@ -11,6 +11,7 @@ using KncWX2Server.Core.Packets;
 using KncWX2Server.Core.Region;
 using KncWX2Server.Core.Scripting;
 using KncWX2Server.Core.Security;
+using KncWX2Server.Core.Serialization;
 using KncWX2Server.GameServer;
 using KncWX2Server.GlobalServer;
 using KncWX2Server.LoginServer;

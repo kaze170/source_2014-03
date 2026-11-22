@@ -1,3 +1,4 @@
+using KncWX2Server.ChannelServer;
 using KncWX2Server.Core.Packets;
 using KncWX2Server.Core.Region;
 
