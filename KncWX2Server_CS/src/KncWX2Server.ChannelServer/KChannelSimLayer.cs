@@ -23,15 +23,15 @@ public sealed class KChannelSimLayer : KSimLayer
     private sealed class IpCheckConfig
     {
         public List<string> Prefixes { get; } = [];
-        public CheckIpType Type { get; set; } = CheckIpType.CIT_ALL_IP_ALLOW;
+        public global::KncWX2Server.ChannelServer.CheckIpType Type { get; set; } = global::KncWX2Server.ChannelServer.CheckIpType.CIT_ALL_IP_ALLOW;
     }
 
     private readonly IpCheckConfig[] _ipConfigs = [new IpCheckConfig(), new IpCheckConfig()];
 
-    public CheckIpMode CheckIpMode { get; private set; } = CheckIpMode.CIM_SERVICE_MODE;
+    public new CheckIpMode CheckIpMode { get; private set; } = CheckIpMode.CIM_SERVICE_MODE;
     public int HanInitFlag { get; private set; } = 1;
 
-    public void SetCheckIPMode(int mode)
+    public new void SetCheckIPMode(int mode)
         => CheckIpMode = mode == (int)CheckIpMode.CIM_CHECK_MODE ? CheckIpMode.CIM_CHECK_MODE : CheckIpMode.CIM_SERVICE_MODE;
 
     public void AddIP(string prefix)
@@ -40,8 +40,8 @@ public sealed class KChannelSimLayer : KSimLayer
             _ipConfigs[(int)CheckIpMode.CIM_SERVICE_MODE].Prefixes.Add(prefix);
     }
 
-    public void SetCheckIPType(int type)
-        => _ipConfigs[(int)CheckIpMode.CIM_SERVICE_MODE].Type = (CheckIpType)type;
+    public new void SetCheckIPType(int type)
+        => _ipConfigs[(int)CheckIpMode.CIM_SERVICE_MODE].Type = (global::KncWX2Server.ChannelServer.CheckIpType)type;
 
     public void AddCheckModeIP(string prefix)
     {
@@ -49,8 +49,8 @@ public sealed class KChannelSimLayer : KSimLayer
             _ipConfigs[(int)CheckIpMode.CIM_CHECK_MODE].Prefixes.Add(prefix);
     }
 
-    public void SetCheckModeCheckIPType(int type)
-        => _ipConfigs[(int)CheckIpMode.CIM_CHECK_MODE].Type = (CheckIpType)type;
+    public new void SetCheckModeCheckIPType(int type)
+        => _ipConfigs[(int)CheckIpMode.CIM_CHECK_MODE].Type = (global::KncWX2Server.ChannelServer.CheckIpType)type;
 
     public void SetHanInitFlag(int flag) => HanInitFlag = flag;
     public int GetNationFlag() => (int)NationFlag;
@@ -62,15 +62,15 @@ public sealed class KChannelSimLayer : KSimLayer
         var cfg = _ipConfigs[(int)CheckIpMode];
         switch (cfg.Type)
         {
-            case CheckIpType.CIT_ALL_IP_ALLOW:
+            case global::KncWX2Server.ChannelServer.CheckIpType.CIT_ALL_IP_ALLOW:
                 return true;
 
-            case CheckIpType.CIT_CHECK_IP_ALLOW:
+            case global::KncWX2Server.ChannelServer.CheckIpType.CIT_CHECK_IP_ALLOW:
                 if (ip == "127.0.0.1" || ip == "::1")
                     return true;
                 return cfg.Prefixes.Any(p => ip.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
-            case CheckIpType.CIT_CHECK_IP_BLOCK:
+            case global::KncWX2Server.ChannelServer.CheckIpType.CIT_CHECK_IP_BLOCK:
                 return !cfg.Prefixes.Any(p => ip.StartsWith(p, StringComparison.OrdinalIgnoreCase));
 
             default:

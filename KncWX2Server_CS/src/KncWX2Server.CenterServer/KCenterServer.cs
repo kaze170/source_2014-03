@@ -670,7 +670,7 @@ public sealed class KCenterServer : KBaseServer
             {
                 var req = ev.GetPayload<KERM_JOIN_SQUARE_REQ>(Region);
                 if (Squares.TryGetValue(req.SquareUid, out var sq))
-                    sq.JoinSquare(new KCnSquare.SquareMember(req.UnitUid, req.NickName, ev.LastSenderUid));
+                    sq.JoinSquare(new KCnSquare.SquareMember { UnitUid = req.UnitUid, NickName = req.NickName, GsUid = ev.LastSenderUid });
                 break;
             }
 
@@ -752,7 +752,7 @@ public sealed class KCenterServer : KBaseServer
             case EventId.ESR_ORDER_TO_REFRESH_MANAGER_REQ:
             case EventId.ESR_ORDER_TO_REFRESH_MANAGER_ACK:
             {
-                var order = ev.PayloadBytes.Length > 0
+                var order = (ev.InProcessPayload != null || ev.Buffer.Length > 0)
                     ? ev.GetPayload<KESR_SCRIPT_REFRESH_ORDER_NOT>(Region)
                     : new KESR_SCRIPT_REFRESH_ORDER_NOT();
                 if (order.OrderType > 0)
@@ -2455,7 +2455,7 @@ public sealed class KCenterServer : KBaseServer
             {
                 var req = ev.GetPayload<KEGS_END_TC_GAME_REQ>(Region);
                 var tc = TrainingCenterRooms.Values.FirstOrDefault(t => t.OwnerUnitUid == ev.FirstSenderUid);
-                tc?.EndGame(req.IsSuccess);
+                tc?.EndGame(ev.FirstSenderUid, req.IsSuccess);
                 if (ev.FirstSenderUid > 0)
                     Router.Send(PerformerId.PI_CN_ROOM, tc?.RoomUid ?? 0, PerformerId.PI_GS_USER, ev.FirstSenderUid,
                         EventId.ERM_END_TC_GAME_ACK, new KEGS_END_TC_GAME_ACK { Ok = NetError.NET_OK, IsSuccess = req.IsSuccess });
@@ -2491,7 +2491,7 @@ public sealed class KCenterServer : KBaseServer
             {
                 var room = RoomManager.ResolveRoom(ev.DestPerformer.Uids.FirstOrDefault(), ev.FirstSenderUid);
                 if (room != null)
-                    KLog.Clog($"[{Name}] {ev.EventId}: room={room.Info.RoomUid}, members={room.Slots.Count(s => s.IsOccupied)}");
+                    KLog.Clog($"[{Name}] {ev.EventId}: room={room.Info.RoomUid}, members={room.Slots.Count(s => s.SlotState == 2)}");
                 break;
             }
 

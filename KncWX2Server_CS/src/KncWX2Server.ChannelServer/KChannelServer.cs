@@ -497,7 +497,7 @@ public sealed class KChannelServer : KBaseServer
             case EventId.ESR_ORDER_TO_REFRESH_MANAGER_REQ:
             case EventId.ESR_ORDER_TO_REFRESH_MANAGER_ACK:
             {
-                var order = ev.PayloadBytes.Length > 0
+                var order = (ev.InProcessPayload != null || ev.Buffer.Length > 0)
                     ? ev.GetPayload<KESR_SCRIPT_REFRESH_ORDER_NOT>(Region)
                     : new KESR_SCRIPT_REFRESH_ORDER_NOT();
                 ScriptRefreshManager.ExecuteRefreshOrder(order.OrderType);

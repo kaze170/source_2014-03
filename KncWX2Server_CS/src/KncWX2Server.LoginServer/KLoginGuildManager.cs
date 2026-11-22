@@ -96,7 +96,7 @@ public sealed class KLoginGuildManager
         SqliteDatabaseManager db, RegionProfile region, int guildUid, long unitUid)
     {
         if (_guilds.TryGetValue(guildUid, out var existing) &&
-            existing.MemberGrades.Count >= Math.Max(10, existing.Info.MaxNumMember))
+            existing.MemberGrades.Count >= Math.Max(10, (int)existing.Info.MaxNumMember))
         {
             return (false, null, NetError.ERR_GUILD_05);
         }

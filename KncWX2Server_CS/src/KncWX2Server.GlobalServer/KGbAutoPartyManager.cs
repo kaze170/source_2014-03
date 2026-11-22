@@ -72,7 +72,7 @@ public sealed class KGbAutoPartyManager
             return _autoPartyBonus
                 .Select(kv => new KncWX2Server.Core.Packets.KAutoPartyBonusInfo
                 {
-                    DungeonMode = kv.Key.dungeonMode,
+                    DungeonMode = kv.Key.mode,
                     DungeonIdWithDif = kv.Key.dungeonId,
                     ActivatedBonus = kv.Value,
                 })

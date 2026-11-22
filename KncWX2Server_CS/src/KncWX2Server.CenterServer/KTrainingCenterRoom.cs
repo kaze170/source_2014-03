@@ -28,6 +28,7 @@ public sealed class KTrainingCenterRoom
     private DateTime _playStartedUtc;
 
     public long RoomUid { get; init; }
+    public long OwnerUnitUid { get; private set; }
     public int TcId { get; private set; }
     public int DungeonId { get; private set; }
     public float PlayTimeLimit { get; private set; }
@@ -42,6 +43,7 @@ public sealed class KTrainingCenterRoom
         if (State != TcRoomState.Init)
             return NetError.ERR_ROOM_09;
 
+        OwnerUnitUid = unitUid;
         TcId = tcId;
         DungeonId = dungeonId;
         PlayTimeLimit = playTimeLimit;

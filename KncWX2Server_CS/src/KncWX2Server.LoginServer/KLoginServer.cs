@@ -576,11 +576,12 @@ public sealed class KLoginServer : KBaseServer
             case EventId.ELG_CHAT_REQ:
             {
                 var req = ev.GetPayload<KELG_CHAT_REQ>(Region);
+                KLoginUserList.OnlineUnitEntry target = null!;
                 bool found = !string.IsNullOrWhiteSpace(req.ReceiverNickName) &&
-                             UserList.TryGetGSUserInfoByNickName(req.ReceiverNickName, out var target);
+                             UserList.TryGetGSUserInfoByNickName(req.ReceiverNickName, out target);
                 if (found)
                 {
-                    Router.Send(PerformerId.PI_LOGIN_SERVER, Uid, PerformerId.PI_GS_USER, target!.GsUserUid,
+                    Router.Send(PerformerId.PI_LOGIN_SERVER, Uid, PerformerId.PI_GS_USER, target.GsUserUid,
                         EventId.ELG_CHAT_NOT, req);
                 }
                 if (ev.FirstSenderUid > 0)
@@ -601,7 +602,17 @@ public sealed class KLoginServer : KBaseServer
                 {
                     var ack = new KELG_GET_RANKING_FOR_GS_RANKING_MANAGER_ACK();
                     var ranks = HenirRankingManager.GetRankings();
-                    ack.HenirRanking[0] = ranks;
+                    ack.HenirRanking[0] = ranks.Select((r, idx) => new KHenirRankingInfo
+                    {
+                        Rank = idx + 1,
+                        StageCount = r.StageCount,
+                        PlayTime = (uint)Math.Max(0, r.ClearTimeSeconds),
+                        RegDate = new DateTimeOffset(r.RecordedUtc).ToUnixTimeSeconds(),
+                        UnitUid = r.UnitUid,
+                        NickName = r.NickName,
+                        UnitClass = (sbyte)r.UnitClass,
+                        Level = r.Level,
+                    }).ToList();
                     ack.LastRank[0] = (uint)ranks.Count;
                     Router.Send(PerformerId.PI_LOGIN_SERVER, Uid, PerformerId.PI_GS_SERVER, ev.FirstSenderUid,
                         EventId.ELG_GET_RANKING_FOR_GS_RANKING_MANAGER_ACK, ack);
@@ -882,7 +893,7 @@ public sealed class KLoginServer : KBaseServer
                         {
                             Ok = NetError.NET_OK,
                             TotalPage = 1,
-                            ViewPage = req.ViewPage,
+                            ViewPage = (uint)Math.Max(1, req.ViewPage),
                             GuildUserListType = req.GuildUserListType,
                             LoginedMemberCount = list.Count(m => m.Position > 0),
                             MemberPositionGradeList = list,
@@ -1419,7 +1430,7 @@ public sealed class KLoginServer : KBaseServer
             case EventId.ESR_ORDER_TO_REFRESH_MANAGER_REQ:
             case EventId.ESR_ORDER_TO_REFRESH_MANAGER_ACK:
             {
-                var order = ev.PayloadBytes.Length > 0
+                var order = (ev.InProcessPayload != null || ev.Buffer.Length > 0)
                     ? ev.GetPayload<KESR_SCRIPT_REFRESH_ORDER_NOT>(Region)
                     : new KESR_SCRIPT_REFRESH_ORDER_NOT();
                 ScriptRefreshManager.ExecuteRefreshOrder(order.OrderType);
@@ -1432,7 +1443,7 @@ public sealed class KLoginServer : KBaseServer
             {
                 var req = ev.GetPayload<KELG_REGISTER_USER_REQ>(Region);
                 long gsUserUid = ev.FirstSenderUid > 0 ? ev.FirstSenderUid : req.UnitUid;
-                var (dup, _) = UserList.RegisterOnline(req.UserUid, req.UserId, Uid, req.GameServerUid, req.ChannelId);
+                var (dup, _) = UserList.RegisterOnline(req.UserUid, req.UserId, Uid, req.ChannelId, req.GameServerUid);
                 if (req.UnitUid > 0)
                     UserList.RegisterOnlineUnit(req.UnitUid, req.UserUid, req.GameServerUid, gsUserUid, req.ChannelId, req.NickName);
                 EventId ackId = ev.EventId == EventId.ELG_CHANNEL_CHANGE_REGISTER_USER_REQ
@@ -1979,8 +1990,8 @@ public sealed class KLoginServer : KBaseServer
             {
                 var req = ev.GetPayload<KELG_REG_USER_BLOCK_NOT>(Region);
                 var btype = ev.EventId == EventId.ELG_REG_TRADE_BLOCK_USER_NOT
-                    ? KAccountBlockManager.BlockType.TradeBlock
-                    : KAccountBlockManager.BlockType.AccountBlock;
+                    ? KAccountBlockManager.BlockType.Trade
+                    : KAccountBlockManager.BlockType.Connect;
                 AccountBlockManager.SetBlock(Db, Region, req.UserId, btype, req.Block, req.Reason);
                 break;
             }
@@ -2145,7 +2156,7 @@ public sealed class KLoginServer : KBaseServer
             case EventId.ELG_DUMP_LOGIN_USER_NOT:
             case EventId.DMP_DUMP_RANKING_MANAGER_NOT:
             {
-                KLog.Clog($"[{Name}] Dump requested ({ev.EventId}): Online={UserList.OnlineCount}, HenirCount={HenirRankingManager.GetTop(100).Count}");
+                KLog.Clog($"[{Name}] Dump requested ({ev.EventId}): Online={UserList.OnlineCount}, HenirCount={HenirRankingManager.GetRankings().Count}");
                 break;
             }
 

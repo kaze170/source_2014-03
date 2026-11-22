@@ -100,7 +100,7 @@ public sealed class GashAuthManager : IRegionalAuthProvider
             await stream.WriteAsync(payload);
 
             byte[] buf = new byte[1024];
-            int read = await stream.ReadAsync(buf).WaitAsync(TimeSpan.FromSeconds(5));
+            int read = await stream.ReadAsync(buf).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
             string resp = Encoding.ASCII.GetString(buf, 0, read);
             string[] parts = resp.Split(';');
             bool success = parts.Length > 0 && parts[0] == "1";

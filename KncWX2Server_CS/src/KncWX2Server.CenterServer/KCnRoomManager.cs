@@ -178,7 +178,7 @@ public sealed class KCnRoom
                 TeamNum = empty.TeamNum,
                 Level = Math.Max(1, (int)user.Level),
                 Rating = user.Rating > 0 ? user.Rating : 1000,
-                PvpPlayCount = user.Win + user.Lose,
+                PvpPlayCount = user.OfficialMatchCnt,
                 IsGameBang = user.IsGameBang,
                 PcBangType = user.PcBangType,
                 HasPet = user.Pet.Count > 0,
@@ -305,7 +305,7 @@ public sealed class KCnRoom
             DungeonMonsterManager.StartGame();
             if (Info.RoomType == 3 && Info.BattleFieldId > 0) // RT_BATTLE_FIELD
             {
-                BattleFieldMonsterManager.StartGame(Info.BattleFieldId, Math.Max(1, (int)Info.JoinSlot), 10);
+                BattleFieldMonsterManager.StartGame(Info.BattleFieldId, Math.Max(1, (int)Info.JoinSlot), 10, false);
                 BattleFieldGameManager.StartGame();
             }
             BadAttitudeManager.Init(Slots.Where(s => s.SlotState == 2).Select(s => s.RoomUserInfo.UnitUid));
@@ -1137,8 +1137,8 @@ public sealed class KCnRoom
         lock (_lock)
         {
             if (Info.RoomType is not (1 or 2) || Info.RoomState != 4) return false;
-            var host = Slots.FirstOrDefault(s => s.State == 2 && s.RoomUserInfo != null && s.RoomUserInfo.IsHost);
-            if (host != null && host.RoomUserInfo!.UnitUid != unitUid) return false;
+            var host = Slots.FirstOrDefault(s => s.SlotState == 2 && s.IsHost);
+            if (host != null && host.RoomUserInfo.UnitUid != unitUid) return false;
             return true;
         }
     }

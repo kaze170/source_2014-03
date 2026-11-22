@@ -258,7 +258,7 @@ public sealed class KGlobalServer : KBaseServer
         {
             Router.Send(PerformerId.PI_GB_SERVER, Uid, PerformerId.PI_GS_SERVER, 0,
                 EventId.EGB_SHUT_DOWN_NOTIFY_NOT,
-                new KPacketString("Shutdown notice: Play access is restricted from 00:00 to 06:00 under the shutdown policy."));
+                new KPacketString { Value = "Shutdown notice: Play access is restricted from 00:00 to 06:00 under the shutdown policy." });
         }
     }
 
@@ -271,7 +271,7 @@ public sealed class KGlobalServer : KBaseServer
         _lastEarthQuakeUtc = utc;
         _nextEarthQuakeSeconds = WorldMissionManager.GetRandomEarthQuakeTime();
         Router.Send(PerformerId.PI_GB_SERVER, Uid, PerformerId.PI_GS_SERVER, 0,
-            EventId.EGB_EARTH_QUAKE_NOT, new KPacketString(string.Empty));
+            EventId.EGB_EARTH_QUAKE_NOT, new KPacketString { Value = string.Empty });
     }
 
     public void CheckJackPotEvent(DateTime? nowLocal = null, bool bypassThrottle = false)
