@@ -28,38 +28,48 @@ public sealed class KChannelSimLayer : KSimLayer
 
     private readonly IpCheckConfig[] _ipConfigs = [new IpCheckConfig(), new IpCheckConfig()];
 
-    public new CheckIpMode CheckIpMode { get; private set; } = CheckIpMode.CIM_SERVICE_MODE;
-    public int HanInitFlag { get; private set; } = 1;
-
-    public new void SetCheckIPMode(int mode)
-        => CheckIpMode = mode == (int)CheckIpMode.CIM_CHECK_MODE ? CheckIpMode.CIM_CHECK_MODE : CheckIpMode.CIM_SERVICE_MODE;
-
-    public void AddIP(string prefix)
+    public override void SetCheckIPMode(int mode)
     {
-        if (!string.IsNullOrWhiteSpace(prefix))
-            _ipConfigs[(int)CheckIpMode.CIM_SERVICE_MODE].Prefixes.Add(prefix);
+        int resolved = mode == (int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_CHECK_MODE
+            ? (int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_CHECK_MODE
+            : (int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_SERVICE_MODE;
+        CheckIpMode = resolved;
     }
 
-    public new void SetCheckIPType(int type)
-        => _ipConfigs[(int)CheckIpMode.CIM_SERVICE_MODE].Type = (global::KncWX2Server.ChannelServer.CheckIpType)type;
-
-    public void AddCheckModeIP(string prefix)
+    public override void AddIP(string prefix)
     {
+        base.AddIP(prefix);
         if (!string.IsNullOrWhiteSpace(prefix))
-            _ipConfigs[(int)CheckIpMode.CIM_CHECK_MODE].Prefixes.Add(prefix);
+            _ipConfigs[(int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_SERVICE_MODE].Prefixes.Add(prefix);
     }
 
-    public new void SetCheckModeCheckIPType(int type)
-        => _ipConfigs[(int)CheckIpMode.CIM_CHECK_MODE].Type = (global::KncWX2Server.ChannelServer.CheckIpType)type;
+    public override void SetCheckIPType(int type)
+    {
+        base.SetCheckIPType(type);
+        _ipConfigs[(int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_SERVICE_MODE].Type = (global::KncWX2Server.ChannelServer.CheckIpType)type;
+    }
 
-    public void SetHanInitFlag(int flag) => HanInitFlag = flag;
-    public int GetNationFlag() => (int)NationFlag;
-    public int GetAuthFlag() => (int)AuthFlag;
-    public CheckIpMode GetCheckIPMode() => CheckIpMode;
+    public override void AddCheckModeIP(string prefix)
+    {
+        base.AddCheckModeIP(prefix);
+        if (!string.IsNullOrWhiteSpace(prefix))
+            _ipConfigs[(int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_CHECK_MODE].Prefixes.Add(prefix);
+    }
+
+    public override void SetCheckModeCheckIPType(int type)
+    {
+        base.SetCheckModeCheckIPType(type);
+        _ipConfigs[(int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_CHECK_MODE].Type = (global::KncWX2Server.ChannelServer.CheckIpType)type;
+    }
+
+    public override void SetHanInitFlag(int flag) => HanInitFlag = flag;
+    public global::KncWX2Server.ChannelServer.CheckIpMode GetCheckIPMode()
+        => (global::KncWX2Server.ChannelServer.CheckIpMode)CheckIpMode;
 
     public bool CheckIP(string ip)
     {
-        var cfg = _ipConfigs[(int)CheckIpMode];
+        int modeIdx = CheckIpMode == (int)global::KncWX2Server.ChannelServer.CheckIpMode.CIM_CHECK_MODE ? 1 : 0;
+        var cfg = _ipConfigs[modeIdx];
         switch (cfg.Type)
         {
             case global::KncWX2Server.ChannelServer.CheckIpType.CIT_ALL_IP_ALLOW:

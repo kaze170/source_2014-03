@@ -61,7 +61,7 @@
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                        <TextBlock Text="Log Level:" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBlock Text="Log Level:" Foreground="#EDF2F7" VerticalAlignment="Center" Margin="0,0,6,0" />
                         <ComboBox x:Name="LogLevelCombo" Width="140" Margin="0,0,12,0" SelectionChanged="LogLevelCombo_SelectionChanged" />
                         <Button Content="Clear Logs" Click="ClearLogs_Click" />
                     </StackPanel>
@@ -93,7 +93,7 @@
 
                     <DockPanel Grid.Column="0" Margin="0,0,6,0">
                         <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
-                            <TextBlock Text="Connected Users" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <TextBlock Text="Connected Users" Foreground="#EDF2F7" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0" />
                             <Button Content="Refresh" Click="RefreshMonitor_Click" />
                             <Button Content="Kick Selected" Click="KickSelected_Click" />
                         </StackPanel>
@@ -109,7 +109,7 @@
                     </DockPanel>
 
                     <DockPanel Grid.Column="1" Margin="6,0,0,0">
-                        <TextBlock DockPanel.Dock="Top" Text="Active Region Channels" FontWeight="Bold" Margin="0,0,0,10" />
+                        <TextBlock DockPanel.Dock="Top" Text="Active Region Channels" Foreground="#EDF2F7" FontWeight="Bold" Margin="0,0,0,10" />
                         <DataGrid x:Name="ChannelsGrid" AutoGenerateColumns="False" IsReadOnly="True"
                                   Background="#0D1117" Foreground="#E2E8F0" RowBackground="#1A202C" AlternatingRowBackground="#2D3748">
                             <DataGrid.Columns>
@@ -157,7 +157,7 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
                     <DockPanel Grid.Row="0" Margin="0,0,0,6">
-                        <TextBlock DockPanel.Dock="Top" Text="Active Servers &amp; Relay Endpoints" FontWeight="Bold" Margin="0,0,0,6" />
+                        <TextBlock DockPanel.Dock="Top" Text="Active Servers &amp; Relay Endpoints" Foreground="#EDF2F7" FontWeight="Bold" Margin="0,0,0,6" />
                         <DataGrid x:Name="SuiteGrid" AutoGenerateColumns="False" IsReadOnly="True"
                                   Background="#0D1117" Foreground="#E2E8F0" RowBackground="#1A202C" AlternatingRowBackground="#2D3748">
                             <DataGrid.Columns>
@@ -169,7 +169,7 @@
                         </DataGrid>
                     </DockPanel>
                     <DockPanel Grid.Row="1">
-                        <TextBlock DockPanel.Dock="Top" Text="Active Rooms &amp; UDP Relay Peers" FontWeight="Bold" Margin="0,0,0,6" />
+                        <TextBlock DockPanel.Dock="Top" Text="Active Rooms &amp; UDP Relay Peers" Foreground="#EDF2F7" FontWeight="Bold" Margin="0,0,0,6" />
                         <DataGrid x:Name="RoomsGrid" AutoGenerateColumns="False" IsReadOnly="True"
                                   Background="#0D1117" Foreground="#E2E8F0" RowBackground="#1A202C" AlternatingRowBackground="#2D3748">
                             <DataGrid.Columns>

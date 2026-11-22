@@ -60,17 +60,17 @@ public abstract class KSimLayer
     public void SetCheckCouponByPublisher(bool check) => CheckCouponByPublisher = check;
     public void SetEnableAuthWait(bool enable) => EnableAuthWait = enable;
     public void SetPublisherCheckGameServerLogin(bool enable) => PublisherCheckGameServerLogin = enable;
-    public void SetCheckIPMode(int mode) => CheckIpMode = mode;
-    public void SetCheckIPType(int type) => CheckIpType = type;
-    public void SetCheckModeCheckIPType(int type) => CheckModeCheckIpType = type;
-    public void SetHanInitFlag(int flag) => HanInitFlag = flag;
+    public virtual void SetCheckIPMode(int mode) => CheckIpMode = mode;
+    public virtual void SetCheckIPType(int type) => CheckIpType = type;
+    public virtual void SetCheckModeCheckIPType(int type) => CheckModeCheckIpType = type;
+    public virtual void SetHanInitFlag(int flag) => HanInitFlag = flag;
     public void SetServerGroupNum(int num) => ServerGroupNum = num;
-    public void AddIP(string ip)
+    public virtual void AddIP(string ip)
     {
         if (!string.IsNullOrWhiteSpace(ip) && !AllowedIps.Contains(ip, StringComparer.OrdinalIgnoreCase))
             AllowedIps.Add(ip);
     }
-    public void AddCheckModeIP(string ip)
+    public virtual void AddCheckModeIP(string ip)
     {
         if (!string.IsNullOrWhiteSpace(ip) && !CheckModeIps.Contains(ip, StringComparer.OrdinalIgnoreCase))
             CheckModeIps.Add(ip);
