@@ -3106,7 +3106,7 @@ public sealed class KGSUser : KActor
                         partner.ActiveUnit = _server.Db.GetUnitByUid(Region, partner.ActiveUnit!.UnitUid);
                         if (partner.ActiveUnit != null) partner.EdManager.SetEd(partner.ActiveUnit.Ed, KUserEDManager.EdReason.ErSetEdInTrade);
                     }
-                    if (res.ok == NetError.NET_OK && _server.GameSysValTable.LetterAndTradeMonitoringIsOn)
+                    if (res.ok && _server.GameSysValTable.LetterAndTradeMonitoringIsOn)
                     {
                         int minEd = _server.GameSysValTable.MonitoringMinEd;
                         var monNow = DateTime.UtcNow;
@@ -17849,15 +17849,17 @@ public sealed class KGSUser : KActor
                 break;
 
             case EventId.ERM_JOIN_TRADE_ACK:
-                if (ev.TryReadPayload<KPacketLong>(Region, out var jt) && jt.Value > 0)
+            {
+                if (ev.TryReadPayload<KPacketLong>(Region, out var jtAck) && jtAck.Value > 0)
                 {
-                    CurrentTradeUid = jt.Value;
+                    CurrentTradeUid = jtAck.Value;
                     if (Fsm.CurrentStateId == KGSFSM.S_ROOM && ActiveUnit != null)
                         _server.Router.Send(PerformerTypeId, ActiveUnit.UnitUid, PerformerId.PI_CENTER_SERVER, _server.Center.Uid,
                             EventId.ERM_TRADE_START_NOT, new KPacketOK { Ok = NetError.NET_OK });
                     SendPacket(EventId.EGS_CREATE_TRADE_NOT, new KEGS_CREATE_TRADE_NOT { TradeUid = CurrentTradeUid });
                 }
                 break;
+            }
 
             case EventId.ERM_LEAVE_BATTLE_FIELD_FOR_CALL_MY_LOVER_ACK:
             case EventId.ERM_LEAVE_BATTLE_FIELD_FOR_DUNGEON_GAME_START_ACK:
