@@ -3445,14 +3445,14 @@ public sealed class KENX_USER_LOGIN_NOT : IKSerializable
     public bool Put(KSerializer ks, RegionProfile region)
     {
         if (!ks.Put(IsGameBang)) return false;
-        if (!ks.Put(PcBangReward)) return false;
+        if (region.PcBangType && !ks.Put(PcBangReward)) return false;
         return true;
     }
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
         if (!ks.Get(out bool v0)) return false; IsGameBang = v0;
-        if (!ks.Get(PcBangReward)) return false;
+        if (region.PcBangType && !ks.Get(PcBangReward)) return false;
         return true;
     }
 }

@@ -8,7 +8,7 @@ public sealed class KUserPcBangManager
 {
     public bool CanTry { get; set; } = true;
     public bool IsPcBang { get; set; }
-    public int PcBangType { get; set; }
+    public int PcBangType { get; set; } = -1;
     public byte AuthResult { get; private set; }
     public byte AuthorizeType { get; private set; }
     public byte ChargeType { get; private set; }

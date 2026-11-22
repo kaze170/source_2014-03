@@ -92,6 +92,11 @@ public sealed class KUdpRelayServer : IAsyncDisposable
 
     internal void HandleDatagram(ReadOnlySpan<byte> packet, IPEndPoint remoteEp)
     {
+        if (KUdpPortCheck.TryCreateReply(packet, remoteEp, out var portCheckReply))
+        {
+            SendRaw(remoteEp, portCheckReply);
+            return;
+        }
         if (packet.Length < 1) return;
 
         var sp = (SystemPacket)packet[0];

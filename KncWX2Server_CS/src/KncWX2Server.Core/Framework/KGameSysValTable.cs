@@ -169,6 +169,9 @@ public sealed class KGameSysValTable
     public PcBangRewardProfile? GetPcBangReward(int pcBangType = 0)
         => _pcBangProfiles.TryGetValue(pcBangType, out var prof) ? prof : _pcBangProfiles.GetValueOrDefault(0);
 
+    public PcBangRewardProfile? FindPcBangReward(int pcBangType)
+        => _pcBangProfiles.TryGetValue(pcBangType, out var profile) ? profile : null;
+
     public float GetGbExpRate(int pcBangType = -1)
         => pcBangType >= 0 ? (GetPcBangReward(pcBangType)?.ExpRate ?? 0f) : _values[(int)GameSysValueType.GsvtGbExp];
 

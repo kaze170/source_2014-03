@@ -2262,6 +2262,8 @@ public sealed class Phase21FullPacketAndFieldParityTests : IDisposable
             await TestSendAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "p21_erm_user", Password = "pw" });
             Assert.Equal(EventId.EGS_VERIFY_ACCOUNT_ACK, (await TestReadEventAsync(stream, sa, RegionProfile.Taiwan)).EventId);
+            Assert.Equal(EventId.ENX_USER_LOGIN_NOT, (await TestReadEventAsync(stream, sa, RegionProfile.Taiwan)).EventId);
+            Assert.Equal(EventId.EGS_SECOND_SECURITY_INFO_NOT, (await TestReadEventAsync(stream, sa, RegionProfile.Taiwan)).EventId);
 
             await TestSendAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_CREATE_UNIT_REQ, new KEGS_CREATE_UNIT_REQ { NickName = "P21ErmHero", UnitClass = 1 });

@@ -205,6 +205,30 @@ public sealed class KGSUser : KActor
         _repeatFilter.RegRepeatEvent(EventId.EGS_WARP_BY_BUTTON_REQ, EventId.EGS_WARP_BY_BUTTON_ACK);
     }
 
+    private void SendUserLoginNotification()
+    {
+        // C++ GetPcBangReward returns the default -1 / zero reward for an unknown type.
+        var profile = _server.GameSysValTable.FindPcBangReward(PcBangManager.PcBangType);
+        var reward = profile == null ? new KPcBangReward() : new KPcBangReward
+        {
+            PcBangType = profile.PcBangType,
+            ExpRate = profile.ExpRate,
+            EdRate = profile.EdRate,
+            VsPointRate = profile.VpRate,
+            SpiritFree = profile.IsSpiritFree,
+            PetExpRate = profile.PetExpRate,
+            AdditionalHenirReward = profile.AdditionalHenirRewardCount,
+            SecretDungeonFree = profile.IsSecretDungeonFree,
+            Avatar = profile.IsUsingPcBangAvatar,
+            Title = profile.IsUsingPcBangTitle,
+        };
+        SendPacket(EventId.ENX_USER_LOGIN_NOT, new KENX_USER_LOGIN_NOT
+        {
+            IsGameBang = PcBangManager.IsPcBang,
+            PcBangReward = reward,
+        });
+    }
+
     public new bool SendPacket(EventId eventId, IKSerializable packet)
     {
         LogManager.SaveSendPacket((ushort)eventId);
@@ -684,6 +708,8 @@ public sealed class KGSUser : KActor
                             LastLogin = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"),
                         },
                     });
+
+                    SendUserLoginNotification();
 
                     if (!Region.DisableSecondSecurity)
                     {
@@ -9326,7 +9352,7 @@ public sealed class KGSUser : KActor
 
             case EventId.EGS_STATE_CHANGE_SERVER_SELECT_REQ:
             {
-                if (Fsm.StateId is not (KGSFSM.S_LOGINED or KGSFSM.S_FIELD_MAP or KGSFSM.S_ROOM)) break;
+                if (Fsm.StateId is not (KGSFSM.S_LOGINED or KGSFSM.S_SERVER_SELECT or KGSFSM.S_FIELD_MAP or KGSFSM.S_ROOM)) break;
                 if (Fsm.StateId == KGSFSM.S_ROOM)
                 {
                     if (ActiveUnit != null && CurrentRoomUid > 0)
@@ -9358,7 +9384,8 @@ public sealed class KGSUser : KActor
                     ActiveUnit = null;
                 }
 
-                Fsm.TryStateTransition(KGSFSM.I_TO_SERVER_SELECT, out _);
+                if (Fsm.StateId != KGSFSM.S_SERVER_SELECT)
+                    Fsm.TryStateTransition(KGSFSM.I_TO_SERVER_SELECT, out _);
                 SendPacket(EventId.EGS_STATE_CHANGE_SERVER_SELECT_ACK,
                     new KEGS_STATE_CHANGE_SERVER_SELECT_ACK { Ok = NetError.NET_OK });
                 break;
@@ -9523,6 +9550,7 @@ public sealed class KGSUser : KActor
                     },
                     ChangeUserInfo = changeInfo,
                 });
+                SendUserLoginNotification();
                 break;
             }
 

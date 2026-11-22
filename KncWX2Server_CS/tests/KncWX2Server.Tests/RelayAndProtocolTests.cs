@@ -59,6 +59,33 @@ public sealed class RelayAndProtocolTests
     }
 
     [Fact]
+    public async Task UdpPortCheck_RespondsOnEchoAndRelayWithObservedEndpoint()
+    {
+        await using var echo = new KUdpEchoServer(new InProcessRouter());
+        await using var relay = new KUdpRelayServer();
+        ushort echoPort = echo.Start(0);
+        ushort relayPort = relay.Start(0);
+        using var sender = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        int localPort = ((IPEndPoint)sender.Client.LocalEndPoint!).Port;
+        // XPT_PORT_CHECK_REQ: ID + packed UID + internal IPv4 + internal port.
+        byte[] request = new byte[15];
+        request[0] = 17;
+        BinaryPrimitives.WriteInt64LittleEndian(request.AsSpan(1, 8), 987654);
+        request[9] = 127; request[12] = 1;
+        BinaryPrimitives.WriteUInt16LittleEndian(request.AsSpan(13, 2), (ushort)localPort);
+        foreach (ushort port in new[] { echoPort, relayPort })
+        {
+            await sender.SendAsync(request, new IPEndPoint(IPAddress.Loopback, port));
+            var ack = await sender.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(port, ack.RemoteEndPoint.Port);
+            Assert.Equal(9, ack.Buffer.Length);
+            Assert.Equal((byte)18, ack.Buffer[0]);
+            Assert.Equal(new byte[] { 127, 0, 0, 1 }, ack.Buffer[1..5]);
+            Assert.Equal(localPort, BinaryPrimitives.ReadInt32LittleEndian(ack.Buffer.AsSpan(5, 4)));
+        }
+    }
+
+    [Fact]
     public async Task UdpEchoServer_ReceivesKUdpToServer_EmitsObservedPortEvent()
     {
         var router = new InProcessRouter();

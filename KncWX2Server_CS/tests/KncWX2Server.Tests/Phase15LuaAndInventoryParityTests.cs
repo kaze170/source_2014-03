@@ -188,6 +188,8 @@ public sealed class Phase15LuaAndInventoryParityTests : IDisposable
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "p15user", Password = "p15user" });
             Assert.Equal(EventId.EGS_VERIFY_ACCOUNT_ACK, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
+            Assert.Equal(EventId.ENX_USER_LOGIN_NOT, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
+            Assert.Equal(EventId.EGS_SECOND_SECURITY_INFO_NOT, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
 
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_CREATE_UNIT_REQ, new KEGS_CREATE_UNIT_REQ { NickName = "P15Hero", UnitClass = 1 });

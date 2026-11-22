@@ -68,6 +68,35 @@ public sealed class FullServerSuiteEndToEndTests : IDisposable
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "test01", Password = "test01" });
             var gsVerify = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_VERIFY_ACCOUNT_ACK>(RegionProfile.Taiwan);
             Assert.Equal(NetError.NET_OK, gsVerify.Ok);
+            var loginNot = await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan);
+            Assert.Equal(EventId.ENX_USER_LOGIN_NOT, loginNot.EventId);
+            Assert.Equal(Convert.FromHexString("00FFFFFFFF000000000000000000000000000000000000000000000000"), loginNot.Buffer.ToArray());
+            Assert.True(loginNot.TryReadPayload<KENX_USER_LOGIN_NOT>(RegionProfile.Taiwan, out var loginInfo));
+            Assert.False(loginInfo.IsGameBang);
+            Assert.Equal(-1, loginInfo.PcBangReward.PcBangType);
+            Assert.Equal(EventId.EGS_SECOND_SECURITY_INFO_NOT, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
+
+            // Follow the real client's packed UDP port check on the ACK's advertised port.
+            using (var udp = new UdpClient(new IPEndPoint(System.Net.IPAddress.Loopback, 0)))
+            {
+                byte[] probe = new byte[15];
+                probe[0] = 17;
+                BinaryPrimitives.WriteInt64LittleEndian(probe.AsSpan(1, 8), gsVerify.AccountInfo.UserUid);
+                probe[9] = 127; probe[12] = 1;
+                int clientPort = ((System.Net.IPEndPoint)udp.Client.LocalEndPoint!).Port;
+                BinaryPrimitives.WriteUInt16LittleEndian(probe.AsSpan(13, 2), (ushort)clientPort);
+                await udp.SendAsync(probe, new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, connAck.UdpPort));
+                var reply = await udp.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal((byte)18, reply.Buffer[0]);
+                Assert.Equal(clientPort, BinaryPrimitives.ReadInt32LittleEndian(reply.Buffer.AsSpan(5, 4)));
+            }
+
+            // After ENX_USER_LOGIN_NOT the real client checks UDP and requests this state.
+            await SendNoParamAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_STATE_CHANGE_SERVER_SELECT_REQ);
+            var stateAck = await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan);
+            Assert.Equal(EventId.EGS_STATE_CHANGE_SERVER_SELECT_ACK, stateAck.EventId);
+            Assert.Equal(NetError.NET_OK, stateAck.GetPayload<KEGS_STATE_CHANGE_SERVER_SELECT_ACK>(RegionProfile.Taiwan).Ok);
 
             // Create Unit
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
@@ -201,6 +230,76 @@ public sealed class FullServerSuiteEndToEndTests : IDisposable
         {
             game.ShutDown();
             login.ShutDown();
+            global.ShutDown();
+            center.ShutDown();
+        }
+    }
+
+    [Fact]
+    public async Task GameLoginNotification_RejectsFailedLoginAndPreservesChannelChangePcBangReward()
+    {
+        var router = new InProcessRouter();
+        var center = new KCenterServer(RegionCode.TW, router);
+        var global = new KGlobalServer(RegionCode.TW, router);
+        var game = new KGameServer(RegionCode.TW, _dbPath, router, center, global);
+        Assert.True(center.Start(overridePort: 0));
+        Assert.True(global.Start(overridePort: 0));
+        Assert.True(game.Start(overridePort: 0, overrideTrPort: 0, overrideUdpEchoPort: 0, overrideUdpRelayPort: 0));
+        try
+        {
+            var account = game.Db.VerifyOrRegisterAccount("TW", "test01", "test01");
+            var (created, unit, _) = game.Db.CreateUnit(RegionProfile.Taiwan, account.UserUid, "ChangeTest", 1);
+            Assert.True(created);
+            Assert.NotNull(unit);
+            game.GameSysValTable.RegisterPcBangProfile(new KGameSysValTable.PcBangRewardProfile
+            {
+                PcBangType = 7, ExpRate = 1, EdRate = 2, VpRate = 3, PetExpRate = 4,
+                IsSpiritFree = true, IsSecretDungeonFree = true, AdditionalHenirRewardCount = 5,
+                IsUsingPcBangAvatar = false, IsUsingPcBangTitle = true,
+            });
+            game.RegisterChannelChangeReservation(unit!.UnitUid, new KChannelChangeInfo { IsPcBang = true, PcBangType = 7 });
+            using var client = new TcpClient();
+            await client.ConnectAsync("127.0.0.1", game.ListenPort);
+            using var stream = client.GetStream();
+            var sa = new KSADatabase();
+            ushort spi = await HandshakeAsync(stream, sa, RegionProfile.Taiwan);
+            await SendPacketAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "test01", Password = "incorrect" });
+            var failure = await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(EventId.EGS_VERIFY_ACCOUNT_ACK, failure.EventId);
+            Assert.Equal(NetError.ERR_VERIFY_03, failure.GetPayload<KEGS_VERIFY_ACCOUNT_ACK>(RegionProfile.Taiwan).Ok);
+            // A subsequent connect ACK must not be preceded by an unsolicited login notification.
+            await SendPacketAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_CONNECT_REQ, new KEGS_CONNECT_REQ { Version = "TW_2014_03" });
+            Assert.Equal(EventId.EGS_CONNECT_ACK, (await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5))).EventId);
+            await SendPacketAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_CONNECT_CHANNEL_CHANGE_REQ, new KEGS_CONNECT_CHANNEL_CHANGE_REQ
+                {
+                    ConnectReq = new KEGS_CONNECT_REQ { Version = "TW_2014_03" },
+                    VerifyAccountReq = new KUserAuthenticateReq { UserId = "test01", Password = "test01" },
+                    SelectUnitReq = new KEGS_SELECT_UNIT_REQ { UnitUid = unit.UnitUid },
+                });
+            var changeAck = await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(EventId.EGS_CONNECT_CHANNEL_CHANGE_ACK, changeAck.EventId);
+            Assert.Equal(NetError.NET_OK, changeAck.GetPayload<KEGS_CONNECT_CHANNEL_CHANGE_ACK>(RegionProfile.Taiwan).Ok);
+            var not = await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(EventId.ENX_USER_LOGIN_NOT, not.EventId);
+            Assert.True(not.TryReadPayload<KENX_USER_LOGIN_NOT>(RegionProfile.Taiwan, out var info));
+            Assert.True(info.IsGameBang);
+            Assert.Equal(7, info.PcBangReward.PcBangType);
+            Assert.Equal(1f, info.PcBangReward.ExpRate);
+            Assert.Equal(2f, info.PcBangReward.EdRate);
+            Assert.Equal(3f, info.PcBangReward.VsPointRate);
+            Assert.True(info.PcBangReward.SpiritFree);
+            Assert.Equal(4f, info.PcBangReward.PetExpRate);
+            Assert.Equal(5, info.PcBangReward.AdditionalHenirReward);
+            Assert.True(info.PcBangReward.SecretDungeonFree);
+            Assert.False(info.PcBangReward.Avatar);
+            Assert.True(info.PcBangReward.Title);
+        }
+        finally
+        {
+            game.ShutDown();
             global.ShutDown();
             center.ShutDown();
         }

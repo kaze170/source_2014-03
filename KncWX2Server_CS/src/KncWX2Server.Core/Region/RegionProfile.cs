@@ -52,6 +52,7 @@ public sealed class RegionProfile
     public bool AccountBlockMessageRenewal { get; init; }         // SERV_ACCOUNT_BLOCK_MESSAGE_RENEWAL (TW/CN)
     public bool ServerCheckHackUserReqAck { get; init; } = true;  // SERV_SERVER_CHECK_HACK_USER_REQ_ACK
     public bool ReconnectForDdosSolution { get; init; }           // SERV_RECONNECT_LOGIC_FOR_DDOS_SOLUTION
+    public bool PcBangType { get; init; } = true;                 // SERV_PC_BANG_TYPE (global builds)
     public bool IdNetmarblePcBang { get; init; }                  // SERV_ID_NETMARBLE_PCBANG
 
     // GameServer / Gameplay wire toggles (verified via g++ -E across TW/HK/CN/JP)

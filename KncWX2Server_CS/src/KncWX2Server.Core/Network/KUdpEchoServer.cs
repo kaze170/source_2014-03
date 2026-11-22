@@ -49,6 +49,11 @@ public sealed class KUdpEchoServer : IAsyncDisposable
             try
             {
                 var result = await _udp.ReceiveAsync(ct);
+                if (KUdpPortCheck.TryCreateReply(result.Buffer, result.RemoteEndPoint, out var reply))
+                {
+                    await _udp.SendAsync(reply, result.RemoteEndPoint, ct);
+                    continue;
+                }
                 if (result.Buffer.Length != 10)
                 {
                     KLog.Cwarn($"KUdpEchoServer: invalid KUdpToServer size {result.Buffer.Length} from {result.RemoteEndPoint}");

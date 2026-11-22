@@ -22,7 +22,7 @@ public sealed class KEGS_CONNECT_REQ : IKSerializable
 public sealed class KEGS_CONNECT_ACK : IKSerializable
 {
     public int Ok { get; set; }
-    public ushort UdpPort { get; set; }
+    public int UdpPort { get; set; }
     public int ChannelId { get; set; }
 
     public bool Put(KSerializer ks, RegionProfile region) =>
@@ -30,7 +30,7 @@ public sealed class KEGS_CONNECT_ACK : IKSerializable
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
-        if (!ks.Get(out int ok) || !ks.Get(out ushort port) || !ks.Get(out int cid)) return false;
+        if (!ks.Get(out int ok) || !ks.Get(out int port) || !ks.Get(out int cid)) return false;
         Ok = ok; UdpPort = port; ChannelId = cid;
         return true;
     }

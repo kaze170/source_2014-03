@@ -95,6 +95,75 @@ public sealed class SerializationAndCryptoTests
     }
 
     [Fact]
+    public void GameConnectAck_UsesCppFourByteUdpPort()
+    {
+        var region = RegionProfile.Taiwan;
+        var buffer = new KSerBuffer();
+        var writer = new KSerializer(region);
+        writer.BeginWriting(buffer);
+        Assert.True(new KEGS_CONNECT_ACK { Ok = 0, UdpPort = 9302, ChannelId = 1 }.Put(writer, region));
+        byte[] expected = Convert.FromHexString("000000000000245600000001");
+        Assert.Equal(expected, buffer.ToArray());
+        var reader = new KSerializer(region);
+        reader.BeginReading(new KSerBuffer(expected));
+        var result = new KEGS_CONNECT_ACK();
+        Assert.True(result.Get(reader, region));
+        Assert.Equal(9302, result.UdpPort);
+        Assert.Equal(1, result.ChannelId);
+    }
+
+    [Fact]
+    public void EnxUserLoginNot_MatchesCppWireLayoutForSupportedRegions()
+    {
+        var expected = Convert.FromHexString("01000000023F8000004000000040400000014080000000000007010001");
+        var packet = new KENX_USER_LOGIN_NOT
+        {
+            IsGameBang = true,
+            PcBangReward = new KPcBangReward
+            {
+                PcBangType = 2, ExpRate = 1, EdRate = 2, VsPointRate = 3,
+                SpiritFree = true, PetExpRate = 4, AdditionalHenirReward = 7,
+                SecretDungeonFree = true, Avatar = false, Title = true,
+            },
+        };
+        foreach (var region in new[] { RegionProfile.Taiwan, RegionProfile.HongKong, RegionProfile.China, RegionProfile.Japan })
+        {
+            Assert.True(region.PcBangType);
+            var output = new KSerBuffer();
+            var writer = new KSerializer(region);
+            writer.BeginWriting(output);
+            Assert.True(packet.Put(writer, region));
+            Assert.Equal(expected, output.ToArray());
+            var input = new KSerBuffer(expected);
+            var reader = new KSerializer(region);
+            reader.BeginReading(input);
+            var parsed = new KENX_USER_LOGIN_NOT();
+            Assert.True(parsed.Get(reader, region));
+            Assert.Equal(expected.Length, input.ReadOffset);
+            Assert.True(parsed.IsGameBang);
+            Assert.Equal(2, parsed.PcBangReward.PcBangType);
+            Assert.Equal(4f, parsed.PcBangReward.PetExpRate);
+            Assert.Equal(7, parsed.PcBangReward.AdditionalHenirReward);
+            Assert.True(parsed.PcBangReward.SecretDungeonFree);
+            Assert.False(parsed.PcBangReward.Avatar);
+            Assert.True(parsed.PcBangReward.Title);
+            reader.BeginReading(new KSerBuffer(expected.AsSpan(0, expected.Length - 1)));
+            Assert.False(new KENX_USER_LOGIN_NOT().Get(reader, region));
+        }
+    }
+
+    [Fact]
+    public void EnxUserLoginNot_DefaultNonPcBangRewardMatchesCpp()
+    {
+        var region = RegionProfile.Taiwan;
+        var buffer = new KSerBuffer();
+        var writer = new KSerializer(region);
+        writer.BeginWriting(buffer);
+        Assert.True(new KENX_USER_LOGIN_NOT().Put(writer, region));
+        Assert.Equal(Convert.FromHexString("00FFFFFFFF000000000000000000000000000000000000000000000000"), buffer.ToArray());
+    }
+
+    [Fact]
     public void KSerBuffer_CompressAndUncompress_Roundtrip()
     {
         var original = Enumerable.Range(0, 500).Select(i => (byte)(i & 0xFF)).ToArray();

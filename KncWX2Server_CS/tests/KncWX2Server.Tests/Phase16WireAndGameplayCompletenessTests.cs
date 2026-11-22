@@ -206,6 +206,8 @@ public sealed class Phase16WireAndGameplayCompletenessTests : IDisposable
                 EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "p16gm", Password = "p16gm" });
             var verifyAck = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_VERIFY_ACCOUNT_ACK>(RegionProfile.Taiwan);
             Assert.Equal(NetError.NET_OK, verifyAck.Ok);
+            Assert.Equal(EventId.ENX_USER_LOGIN_NOT, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
+            Assert.Equal(EventId.EGS_SECOND_SECURITY_INFO_NOT, (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).EventId);
             long accountUid = verifyAck.AccountInfo.UserUid;
 
             int itemCardNo = game.Db.GrantAccountCoupon(accountUid, "TW-ITEM-99", couponType: 0, productNo: 5002, itemId: 130048, quantity: 3);
