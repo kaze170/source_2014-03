@@ -193,7 +193,7 @@ public sealed class KCnRoom
                 PcBangType = user.PcBangType,
                 HasPet = user.Pet.Count > 0,
                 BaseHp = user.GameStat.BaseHp,
-                BonusRate = new Dictionary<int, float>(user.BonusRate),
+                BonusRate = user.BonusRate.ToDictionary(pair => (int)pair.Key, pair => pair.Value),
             };
             return (NetError.NET_OK, empty);
         }

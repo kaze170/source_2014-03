@@ -574,7 +574,7 @@ public sealed class KRoomUserInfo : IKSerializable
     public bool IsGameBang { get; set; }
     public int PcBangType { get; set; } = -1;
     public bool IsObserver { get; set; }
-    public Dictionary<int, float> BonusRate { get; set; } = new();
+    public Dictionary<sbyte, float> BonusRate { get; set; } = new();
     public bool IsRingOfPvpRebirth { get; set; }
     public bool IsGuestUser { get; set; }
     public Dictionary<int, KSubQuestInfo> OngoingQuest { get; set; } = new();
@@ -649,7 +649,7 @@ public sealed class KRoomUserInfo : IKSerializable
             !ks.Get(out int rat) || !ks.Get(out int mrat) || !ks.Get(out bool wbm) ||
             !ks.Get(out sbyte rank) || !ks.Get(out sbyte rfs) || !ks.Get(out float kf) || !ks.Get(out bool redist) ||
             !ks.Get(out bool gb) || !ks.Get(out int pcb) || !ks.Get(out bool obs) ||
-            !ks.GetMap(BonusRate, static s => (s.Get(out int k), k), static s => (s.Get(out float v), v)) ||
+            !ks.GetMap(BonusRate, static s => (s.Get(out sbyte k), k), static s => (s.Get(out float v), v)) ||
             !ks.Get(out bool rpr) || !ks.Get(out bool guest) ||
             !ks.GetMap(OngoingQuest, static s => (s.Get(out int k), k), static s => { var v = new KSubQuestInfo(); return (s.Get(v), v); }) ||
             !ks.Get(out int tid) || !ks.GetWideString(out string gname) || !ks.Get(out int guid) || !ks.Get(out byte mgrade) ||
@@ -739,7 +739,7 @@ public sealed class KRoomInfo : IKSerializable
     public sbyte DungeonMode { get; set; }
     public long PartyUid { get; set; }
     public int BattleFieldId { get; set; }
-    public Dictionary<long, short> AllPlayersSelectedMap { get; set; } = new();
+    public Dictionary<short, int> AllPlayersSelectedMap { get; set; } = new();
     public bool DefenceDungeonOpen { get; set; }
 
     public bool Put(KSerializer ks, RegionProfile region) =>
@@ -762,7 +762,7 @@ public sealed class KRoomInfo : IKSerializable
             !ks.Get(out sbyte wkn) || !ks.Get(out bool ci) || !ks.Get(out float pt) || !ks.Get(out short wid) ||
             !ks.Get(out short swid) || !ks.Get(out sbyte diff) || !ks.Get(out int did) || !ks.Get(out sbyte git) ||
             !ks.Get(out sbyte dm) || !ks.Get(out long puid) || !ks.Get(out int bfid) ||
-            !ks.GetMap(AllPlayersSelectedMap, static s => (s.Get(out long k), k), static s => (s.Get(out short v), v)) ||
+            !ks.GetMap(AllPlayersSelectedMap, static s => (s.Get(out short k), k), static s => (s.Get(out int v), v)) ||
             !ks.Get(out bool ddo))
             return false;
 

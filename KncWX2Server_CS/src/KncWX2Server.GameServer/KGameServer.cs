@@ -357,6 +357,7 @@ public sealed class KGameServer : KBaseServer
 
         UdpRelayPort = UdpRelay.Start(overrideUdpRelayPort ?? Region.DefaultUdpRelayPort);
         Center.RoomManager.DefaultUdpRelayPort = UdpRelayPort;
+        Center.RoomManager.DefaultUdpRelayIp = PublicIp;
         UdpEchoPort = UdpEcho.Start(overrideUdpEchoPort ?? Region.DefaultUdpEchoPort);
         TrPort = TrServer.Start(overrideTrPort ?? Region.DefaultTrPort);
 

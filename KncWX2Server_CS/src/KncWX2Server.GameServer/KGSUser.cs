@@ -9002,14 +9002,16 @@ public sealed class KGSUser : KActor
                     SendPacket(EventId.EGS_CREATE_TUTORIAL_ROOM_ACK, new KEGS_CREATE_TUTORIAL_ROOM_ACK { Ok = NetError.ERR_GUEST_USER_02 });
                     break;
                 }
-                if (req.RoomInfo.RoomType is not (1 or 2))
-                {
-                    SendPacket(EventId.EGS_CREATE_TUTORIAL_ROOM_ACK, new KEGS_CREATE_TUTORIAL_ROOM_ACK { Ok = NetError.ERR_ROOM_00 });
-                    break;
-                }
-                if (req.RoomInfo.DungeonId != 30000 && req.RoomInfo.DungeonId != 30010 && req.RoomInfo.DungeonId != 39000)
+                // CXSLDungeon::IsSinglePlayDungeon (DungeonEnum.h), not the
+                // unrelated ordinary/training dungeon IDs previously used here.
+                if (!TutorialRoomRules.IsSinglePlayDungeon(req.RoomInfo.DungeonId))
                 {
                     SendPacket(EventId.EGS_CREATE_TUTORIAL_ROOM_ACK, new KEGS_CREATE_TUTORIAL_ROOM_ACK { Ok = NetError.ERR_ROOM_30 });
+                    break;
+                }
+                if (req.RoomInfo.RoomType != 1) // CXSLRoom::RT_DUNGEON
+                {
+                    SendPacket(EventId.EGS_CREATE_TUTORIAL_ROOM_ACK, new KEGS_CREATE_TUTORIAL_ROOM_ACK { Ok = NetError.ERR_ROOM_00 });
                     break;
                 }
                 LeaveCurrentField();

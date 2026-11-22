@@ -10,6 +10,33 @@ namespace KncWX2Server.Tests;
 public sealed class SerializationAndCryptoTests
 {
     [Fact]
+    public void RoomInfo_SelectedMap_UsesCppShortKeyAndIntValue()
+    {
+        var packet = new KRoomInfo { AllPlayersSelectedMap = new() { [0x1234] = 0x01020304 }, DefenceDungeonOpen = true };
+        var buffer = new KSerBuffer();
+        var writer = new KSerializer(RegionProfile.Taiwan);
+        writer.BeginWriting(buffer);
+        Assert.True(packet.Put(writer, RegionProfile.Taiwan));
+        writer.EndWriting();
+        Assert.Equal(Convert.FromHexString("0000000112340102030401"), buffer.ToArray()[^11..]);
+    }
+
+    [Theory]
+    [InlineData(30030, true)]
+    [InlineData(30035, true)]
+    [InlineData(30040, true)]
+    [InlineData(39600, true)]
+    [InlineData(39608, true)]
+    [InlineData(39609, false)]
+    [InlineData(30000, false)]
+    [InlineData(30010, false)]
+    [InlineData(39000, false)]
+    public void TutorialRoom_SinglePlayIdsMatchCpp(int id, bool expected)
+    {
+        Assert.Equal(expected, KncWX2Server.GameServer.TutorialRoomRules.IsSinglePlayDungeon(id));
+    }
+
+    [Fact]
     public void KSerializer_EncodesBigEndianNumericsAndUtf16LeStrings()
     {
         var region = RegionProfile.Taiwan;

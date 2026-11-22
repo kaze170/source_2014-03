@@ -158,6 +158,15 @@ public sealed class FullServerSuiteEndToEndTests : IDisposable
             var invReqAck = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_GET_MY_INVENTORY_ACK>(RegionProfile.Taiwan);
             Assert.Equal(NetError.NET_OK, invReqAck.Ok);
 
+            // The original server rejects ordinary dungeons before checking room type.
+            await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_CREATE_TUTORIAL_ROOM_REQ, new KEGS_CREATE_TUTORIAL_ROOM_REQ
+                {
+                    RoomInfo = new KRoomInfo { RoomType = 1, DungeonId = 30000 },
+                });
+            var invalidTutorialAck = (await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan)).GetPayload<KEGS_CREATE_TUTORIAL_ROOM_ACK>(RegionProfile.Taiwan);
+            Assert.Equal(NetError.ERR_ROOM_30, invalidTutorialAck.Ok);
+
             // Enter Village Field & Chat
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
                 EventId.EGS_STATE_CHANGE_FIELD_REQ, new KEGS_STATE_CHANGE_FIELD_REQ { MapId = 20001 });
