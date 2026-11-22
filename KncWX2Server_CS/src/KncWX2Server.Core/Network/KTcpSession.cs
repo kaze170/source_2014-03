@@ -199,7 +199,9 @@ public sealed class KTcpSession : IAsyncDisposable
                         });
                     }
                     _authFailCount++;
-                    KLog.Cwarn($"Packet auth/decrypt failed ({_authFailCount}/{PacketAuthFailLimit}) [{failureReason}] from {RemoteIp}:{RemotePort}");
+                    bool matchesSpi0 = _currentSpi != 0 && new KSecureBuffer(_saDb, 0, secData).IsAuthentic(out _, out _, checkSequenceNum: false);
+                    string hexHead = Convert.ToHexString(secData.AsSpan(0, Math.Min(16, secData.Length)));
+                    KLog.Cwarn($"Packet auth/decrypt failed ({_authFailCount}/{PacketAuthFailLimit}) [{failureReason}] srvSpi={_currentSpi} len={secData.Length} spi0Ok={matchesSpi0} head={hexHead} from {RemoteIp}:{RemotePort}");
                     if (PacketAuthFailLimit > 0 && _authFailCount >= PacketAuthFailLimit)
                     {
                         KLog.Cerr($"AuthFailLimit exceeded for {RemoteIp}:{RemotePort}, disconnecting.");
