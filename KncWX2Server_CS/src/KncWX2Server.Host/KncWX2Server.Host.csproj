@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net11.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>KncWX2Server.Host</RootNamespace>
+    <AssemblyName>KncWX2Server.Host</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\KncWX2Server.Core\KncWX2Server.Core.csproj" />
+    <ProjectReference Include="..\KncWX2Server.ChannelServer\KncWX2Server.ChannelServer.csproj" />
+    <ProjectReference Include="..\KncWX2Server.LoginServer\KncWX2Server.LoginServer.csproj" />
+    <ProjectReference Include="..\KncWX2Server.CenterServer\KncWX2Server.CenterServer.csproj" />
+    <ProjectReference Include="..\KncWX2Server.GlobalServer\KncWX2Server.GlobalServer.csproj" />
+    <ProjectReference Include="..\KncWX2Server.GameServer\KncWX2Server.GameServer.csproj" />
+  </ItemGroup>
+</Project>

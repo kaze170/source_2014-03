@@ -1,0 +1,60 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35506.116
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.Core", "src\KncWX2Server.Core\KncWX2Server.Core.csproj", "{A1B2C3D4-1001-4A1B-8C2D-000000000001}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.ChannelServer", "src\KncWX2Server.ChannelServer\KncWX2Server.ChannelServer.csproj", "{A1B2C3D4-1002-4A1B-8C2D-000000000002}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.LoginServer", "src\KncWX2Server.LoginServer\KncWX2Server.LoginServer.csproj", "{A1B2C3D4-1005-4A1B-8C2D-000000000005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.CenterServer", "src\KncWX2Server.CenterServer\KncWX2Server.CenterServer.csproj", "{A1B2C3D4-1006-4A1B-8C2D-000000000006}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.GlobalServer", "src\KncWX2Server.GlobalServer\KncWX2Server.GlobalServer.csproj", "{A1B2C3D4-1007-4A1B-8C2D-000000000007}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.GameServer", "src\KncWX2Server.GameServer\KncWX2Server.GameServer.csproj", "{A1B2C3D4-1008-4A1B-8C2D-000000000008}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.Host", "src\KncWX2Server.Host\KncWX2Server.Host.csproj", "{A1B2C3D4-1003-4A1B-8C2D-000000000003}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KncWX2Server.Tests", "tests\KncWX2Server.Tests\KncWX2Server.Tests.csproj", "{A1B2C3D4-1004-4A1B-8C2D-000000000004}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A1B2C3D4-1001-4A1B-8C2D-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1001-4A1B-8C2D-000000000001}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1001-4A1B-8C2D-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1001-4A1B-8C2D-000000000001}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1002-4A1B-8C2D-000000000002}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1002-4A1B-8C2D-000000000002}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1002-4A1B-8C2D-000000000002}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1002-4A1B-8C2D-000000000002}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1005-4A1B-8C2D-000000000005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1005-4A1B-8C2D-000000000005}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1005-4A1B-8C2D-000000000005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1005-4A1B-8C2D-000000000005}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1006-4A1B-8C2D-000000000006}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1006-4A1B-8C2D-000000000006}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1006-4A1B-8C2D-000000000006}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1006-4A1B-8C2D-000000000006}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1007-4A1B-8C2D-000000000007}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1007-4A1B-8C2D-000000000007}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1007-4A1B-8C2D-000000000007}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1007-4A1B-8C2D-000000000007}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1008-4A1B-8C2D-000000000008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1008-4A1B-8C2D-000000000008}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1008-4A1B-8C2D-000000000008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1008-4A1B-8C2D-000000000008}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1003-4A1B-8C2D-000000000003}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1003-4A1B-8C2D-000000000003}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1003-4A1B-8C2D-000000000003}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1003-4A1B-8C2D-000000000003}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1004-4A1B-8C2D-000000000004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1004-4A1B-8C2D-000000000004}.Debug|Any CPU.Build.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-1004-4A1B-8C2D-000000000004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-1004-4A1B-8C2D-000000000004}.Release|Any CPU.Build.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+EndGlobal

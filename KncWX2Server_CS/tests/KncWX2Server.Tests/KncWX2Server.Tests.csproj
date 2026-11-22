@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>KncWX2Server.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\KncWX2Server.Core\KncWX2Server.Core.csproj" />
+    <ProjectReference Include="..\..\src\KncWX2Server.ChannelServer\KncWX2Server.ChannelServer.csproj" />
+    <ProjectReference Include="..\..\src\KncWX2Server.LoginServer\KncWX2Server.LoginServer.csproj" />
+    <ProjectReference Include="..\..\src\KncWX2Server.CenterServer\KncWX2Server.CenterServer.csproj" />
+    <ProjectReference Include="..\..\src\KncWX2Server.GlobalServer\KncWX2Server.GlobalServer.csproj" />
+    <ProjectReference Include="..\..\src\KncWX2Server.GameServer\KncWX2Server.GameServer.csproj" />
+  </ItemGroup>
+</Project>

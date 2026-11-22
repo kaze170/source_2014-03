@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>KncWX2Server.LoginServer</RootNamespace>
+    <AssemblyName>KncWX2Server.LoginServer</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\KncWX2Server.Core\KncWX2Server.Core.csproj" />
+  </ItemGroup>
+</Project>
