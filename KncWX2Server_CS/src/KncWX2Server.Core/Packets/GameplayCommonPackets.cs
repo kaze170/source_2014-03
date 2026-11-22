@@ -423,6 +423,7 @@ public sealed class KUnitInfo : IKSerializable
     public long WarpVipEndDate { get; set; }
     public int EventQuestClearCount { get; set; }
     public int ExchangeCount { get; set; }
+    public int AccumulationSpirit { get; set; }
     public byte OldYearMissionRewardedLevel { get; set; }
     public int NewYearMissionStepId { get; set; } = -1;
 
@@ -459,27 +460,22 @@ public sealed class KUnitInfo : IKSerializable
             !ks.PutMap(EquippedItem, static (s, k) => s.Put(k), static (s, v) => s.Put(v)) ||
             !ks.Put(UnitSkillData) || !ks.Put(IsParty) || !ks.Put(SpiritMax) || !ks.Put(Spirit) ||
             !ks.Put(IsGameBang) || !ks.Put(PcBangType) || !ks.Put(TitleId) || !ks.Put(UserGuildInfo) ||
-            !ks.PutWideString(LastLoginTime) || !ks.Put(WarpVipEndDate) || !ks.Put(EventQuestClearCount) ||
-            !ks.Put(ExchangeCount) || !ks.Put(OldYearMissionRewardedLevel) || !ks.Put(NewYearMissionStepId))
+            !ks.PutWideString(LastLoginTime))
             return false;
 
-        if (region.Region is RegionCode.TW or RegionCode.HK)
-        {
+        // Preserve the C++ CommonPacket.cpp feature-field order. The options are
+        // independent: JP has check-power and anniversary fields.
+        if (region.UnitWaitDelete &&
+            (!ks.PutWideString(LastDate) || !ks.Put(Deleted) ||
+             !ks.Put(DelAbleDate) || !ks.Put(RestoreAbleDate))) return false;
+        if (!ks.Put(WarpVipEndDate) || !ks.Put(EventQuestClearCount) || !ks.Put(ExchangeCount)) return false;
+        if (region.AccumulationSpiritSystem)
+            if (!ks.Put(AccumulationSpirit)) return false;
+        if (!ks.Put(OldYearMissionRewardedLevel) || !ks.Put(NewYearMissionStepId)) return false;
+        if (region.Region is RegionCode.TW or RegionCode.HK or RegionCode.JP)
             if (!ks.Put(CheckPowerCount) || !ks.Put(CheckPowerTime) ||
-                !ks.Put(CheckPowerShowPopUp) || !ks.Put(CheckPowerScore))
-                return false;
-        }
-        else if (region.UnitWaitDelete)
-        {
-            if (!ks.PutWideString(LastDate) || !ks.Put(Deleted) ||
-                !ks.Put(DelAbleDate) || !ks.Put(RestoreAbleDate))
-                return false;
-        }
-        else if (region.Region == RegionCode.JP)
-        {
-            if (!ks.Put(AccountPvpLoseCount))
-                return false;
-        }
+                !ks.Put(CheckPowerShowPopUp) || !ks.Put(CheckPowerScore)) return false;
+        if (region.Region == RegionCode.JP && !ks.Put(AccountPvpLoseCount)) return false;
         return true;
     }
 
@@ -501,23 +497,28 @@ public sealed class KUnitInfo : IKSerializable
             !ks.GetMap(EquippedItem, static s => (s.Get(out int k), k), static s => { var v = new KInventoryItemInfo(); return (s.Get(v), v); }) ||
             !ks.Get(UnitSkillData) || !ks.Get(out bool isParty) || !ks.Get(out int spMax) || !ks.Get(out int spCur) ||
             !ks.Get(out bool gb) || !ks.Get(out int pcb) || !ks.Get(out int titleId) || !ks.Get(UserGuildInfo) ||
-            !ks.GetWideString(out string llt) || !ks.Get(out long wvip) || !ks.Get(out int evCnt) ||
-            !ks.Get(out int exCnt) || !ks.Get(out byte oldYr) || !ks.Get(out int newYr))
+            !ks.GetWideString(out string llt))
             return false;
 
-        if (region.Region is RegionCode.TW or RegionCode.HK)
+        if (region.UnitWaitDelete)
         {
-            if (!ks.Get(out byte cpc) || !ks.Get(out long cpt) || !ks.Get(out bool cpp) || !ks.Get(out byte cps))
-                return false;
-            CheckPowerCount = cpc; CheckPowerTime = cpt; CheckPowerShowPopUp = cpp; CheckPowerScore = cps;
-        }
-        else if (region.UnitWaitDelete)
-        {
-            if (!ks.GetWideString(out string ld) || !ks.Get(out bool del) || !ks.Get(out long dad) || !ks.Get(out long rad))
-                return false;
+            if (!ks.GetWideString(out string ld) || !ks.Get(out bool del) ||
+                !ks.Get(out long dad) || !ks.Get(out long rad)) return false;
             LastDate = ld; Deleted = del; DelAbleDate = dad; RestoreAbleDate = rad;
         }
-        else if (region.Region == RegionCode.JP)
+        if (!ks.Get(out long wvip) || !ks.Get(out int evCnt) || !ks.Get(out int exCnt)) return false;
+        if (region.AccumulationSpiritSystem)
+        {
+            if (!ks.Get(out int spirit)) return false;
+            AccumulationSpirit = spirit;
+        }
+        if (!ks.Get(out byte oldYr) || !ks.Get(out int newYr)) return false;
+        if (region.Region is RegionCode.TW or RegionCode.HK or RegionCode.JP)
+        {
+            if (!ks.Get(out byte cpc) || !ks.Get(out long cpt) || !ks.Get(out bool cpp) || !ks.Get(out byte cps)) return false;
+            CheckPowerCount = cpc; CheckPowerTime = cpt; CheckPowerShowPopUp = cpp; CheckPowerScore = cps;
+        }
+        if (region.Region == RegionCode.JP)
         {
             if (!ks.Get(out int aplc)) return false;
             AccountPvpLoseCount = aplc;

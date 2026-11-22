@@ -326,6 +326,48 @@ public sealed class FullServerSuiteEndToEndTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ServerSelect_BlockedAuthLevelSendsErrorBeforeDisconnect()
+    {
+        var router = new InProcessRouter();
+        var center = new KCenterServer(RegionCode.TW, router);
+        var global = new KGlobalServer(RegionCode.TW, router);
+        var game = new KGameServer(RegionCode.TW, _dbPath, router, center, global);
+        Assert.True(center.Start(overridePort: 0));
+        Assert.True(global.Start(overridePort: 0));
+        Assert.True(game.Start(overridePort: 0, overrideTrPort: 0, overrideUdpEchoPort: 0, overrideUdpRelayPort: 0));
+        try
+        {
+            game.Db.SetAccountAuthLevel(RegionProfile.Taiwan, "test01", -2);
+            using var client = new TcpClient();
+            await client.ConnectAsync("127.0.0.1", game.ListenPort);
+            using var stream = client.GetStream();
+            var sa = new KSADatabase();
+            ushort spi = await HandshakeAsync(stream, sa, RegionProfile.Taiwan);
+            await SendPacketAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_VERIFY_ACCOUNT_REQ, new KUserAuthenticateReq { UserId = "test01", Password = "test01" });
+            var verify = await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(EventId.EGS_VERIFY_ACCOUNT_ACK, verify.EventId);
+            Assert.Equal(NetError.NET_OK, verify.GetPayload<KEGS_VERIFY_ACCOUNT_ACK>(RegionProfile.Taiwan).Ok);
+            Assert.Equal(EventId.ENX_USER_LOGIN_NOT, (await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5))).EventId);
+            Assert.Equal(EventId.EGS_SECOND_SECURITY_INFO_NOT, (await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5))).EventId);
+            await SendPacketAsync(stream, sa, spi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_SELECT_SERVER_SET_REQ, new KEGS_SELECT_SERVER_SET_REQ { ServerSetId = 0x001AF5A0 });
+            var response = await ReadEventAsync(stream, sa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(EventId.EGS_SELECT_SERVER_SET_ACK, response.EventId);
+            Assert.True(response.TryReadPayload<KEGS_SELECT_SERVER_SET_ACK>(RegionProfile.Taiwan, out var ack));
+            Assert.Equal(NetError.ERR_VERIFY_11, ack.Ok);
+            byte[] oneByte = new byte[1];
+            Assert.Equal(0, await stream.ReadAsync(oneByte.AsMemory()).AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            game.ShutDown();
+            global.ShutDown();
+            center.ShutDown();
+        }
+    }
+
     private static async Task<ushort> HandshakeAsync(NetworkStream stream, KSADatabase saDb, RegionProfile region)
     {
         var acceptEv = await ReadEventAsync(stream, saDb, region);

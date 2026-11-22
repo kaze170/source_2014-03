@@ -14,6 +14,7 @@ public sealed class KGSUser : KActor
 {
     private readonly KGameServer _server;
     private readonly KRepeatEventFilter _repeatFilter = new();
+    private volatile bool _closingAfterBlockedSelect;
 
     public KUserSpiritManager SpiritManager { get; } = new();
     public KAntiAddictionManager AntiAddictionManager { get; } = new();
@@ -203,6 +204,26 @@ public sealed class KGSUser : KActor
         _repeatFilter.RegRepeatEvent(EventId.EGS_RESTORE_UNIT_REQ, EventId.EGS_RESTORE_UNIT_ACK);
         _repeatFilter.RegRepeatEvent(EventId.EGS_USE_SPIRIT_REWARD_REQ, EventId.EGS_USE_SPIRIT_REWARD_ACK);
         _repeatFilter.RegRepeatEvent(EventId.EGS_WARP_BY_BUTTON_REQ, EventId.EGS_WARP_BY_BUTTON_ACK);
+    }
+
+    private async Task SendBlockedServerSelectAndCloseAsync(KEGS_SELECT_SERVER_SET_ACK packet)
+    {
+        try
+        {
+            var ev = new KEvent();
+            ev.SetData(PerformerId.PI_GS_PROXY, null, EventId.EGS_SELECT_SERVER_SET_ACK, packet, Region);
+            ev.DestPerformer.AddUID(Uid);
+            LogManager.SaveSendPacket((ushort)EventId.EGS_SELECT_SERVER_SET_ACK);
+            await Session.SendEventAsync(ev).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // The peer may disconnect while the response is queued.
+        }
+        finally
+        {
+            ReserveDestroy();
+        }
     }
 
     private void SendUserLoginNotification()
@@ -562,6 +583,7 @@ public sealed class KGSUser : KActor
 
     protected override void ProcessEvent(KEvent ev)
     {
+        if (_closingAfterBlockedSelect) return;
         LogManager.SaveProcessEvent(ev.EventIdValue);
         if (ev.FromType == EventFromType.Client && !_repeatFilter.CheckReqEvent(ev.EventIdValue))
             return;
@@ -9436,7 +9458,8 @@ public sealed class KGSUser : KActor
                 bool isBlocked = _server.Db.IsAccountBlocked(Region.Code, UserId, out string blockReason);
                 if (isBlocked || AuthLevel is >= -9 and <= -2)
                 {
-                    SendPacket(EventId.EGS_SELECT_SERVER_SET_ACK, new KEGS_SELECT_SERVER_SET_ACK
+                    _closingAfterBlockedSelect = true;
+                    _ = SendBlockedServerSelectAndCloseAsync(new KEGS_SELECT_SERVER_SET_ACK
                     {
                         Ok = Region.AccountBlockMessageRenewal
                             ? Region.ResolveNetError(NetErrorKey.ERR_ACCOUNT_BLOCK_01)
@@ -9447,7 +9470,6 @@ public sealed class KGSUser : KActor
                             EndTime = string.Empty,
                         },
                     });
-                    ReserveDestroy();
                     break;
                 }
 
@@ -12497,6 +12519,7 @@ public sealed class KGSUser : KActor
 
             case EventId.EGS_CHARACTER_LIST_REQ:
             {
+                if (Fsm.StateId is not (KGSFSM.S_LOGINED or KGSFSM.S_SERVER_SELECT)) break;
                 var units = _server.Db.GetUnitsForAccount(Region, AccountUid);
                 var ack = new KEGS_CHARACTER_LIST_ACK
                 {

@@ -95,6 +95,73 @@ public sealed class SerializationAndCryptoTests
     }
 
     [Fact]
+    public void CharacterListUnitInfo_UsesCppRegionalTailOrder()
+    {
+        var unit = new KUnitInfo
+        {
+            LastLoginTime = "Z", LastDate = "D", Deleted = true, DelAbleDate = 1, RestoreAbleDate = 2,
+            WarpVipEndDate = 3, EventQuestClearCount = 4, ExchangeCount = 5, AccumulationSpirit = 99,
+            OldYearMissionRewardedLevel = 6, NewYearMissionStepId = 7,
+            CheckPowerCount = 8, CheckPowerTime = 9, CheckPowerShowPopUp = true, CheckPowerScore = 10,
+            AccountPvpLoseCount = 11,
+        };
+        var cases = new[]
+        {
+            (RegionProfile.Taiwan, "000000025A00000000000000000300000004000000050600000007080000000000000009010A"),
+            (RegionProfile.HongKong, "000000025A00000000000000000300000004000000050600000007080000000000000009010A"),
+            (RegionProfile.China, "000000025A000000000244000100000000000000010000000000000002000000000000000300000004000000050600000007"),
+            (RegionProfile.Japan, "000000025A00000000000000000300000004000000050600000007080000000000000009010A0000000B"),
+        };
+        foreach (var (region, tailHex) in cases)
+        {
+            Assert.False(region.AccumulationSpiritSystem); // guarded-out burning event in these builds
+            var buffer = new KSerBuffer();
+            var writer = new KSerializer(region);
+            writer.BeginWriting(buffer);
+            Assert.True(unit.Put(writer, region));
+            var expectedTail = Convert.FromHexString(tailHex);
+            Assert.Equal(expectedTail, buffer.ToArray()[^expectedTail.Length..]);
+            var reader = new KSerializer(region);
+            var input = new KSerBuffer(buffer.ToArray());
+            reader.BeginReading(input);
+            var parsed = new KUnitInfo();
+            Assert.True(parsed.Get(reader, region));
+            Assert.Equal(input.Length, input.ReadOffset);
+            Assert.Equal("Z", parsed.LastLoginTime);
+            Assert.Equal(3, parsed.WarpVipEndDate);
+            Assert.Equal(0, parsed.AccumulationSpirit);
+            if (region.UnitWaitDelete)
+            {
+                Assert.Equal("D", parsed.LastDate);
+                Assert.True(parsed.Deleted);
+                Assert.Equal(1, parsed.DelAbleDate);
+                Assert.Equal(2, parsed.RestoreAbleDate);
+            }
+            if (region.Region is RegionCode.TW or RegionCode.HK or RegionCode.JP)
+            {
+                Assert.Equal((byte)8, parsed.CheckPowerCount);
+                Assert.Equal(9, parsed.CheckPowerTime);
+                Assert.True(parsed.CheckPowerShowPopUp);
+                Assert.Equal((byte)10, parsed.CheckPowerScore);
+            }
+            if (region.Region == RegionCode.JP) Assert.Equal(11, parsed.AccountPvpLoseCount);
+            reader.BeginReading(new KSerBuffer(buffer.AsSpan()[..^1]));
+            Assert.False(new KUnitInfo().Get(reader, region));
+        }
+    }
+
+    [Fact]
+    public void SelectServerSetAck_MatchesCppWireLayout()
+    {
+        var region = RegionProfile.Taiwan;
+        var output = new KSerBuffer();
+        var writer = new KSerializer(region);
+        writer.BeginWriting(output);
+        Assert.True(new KEGS_SELECT_SERVER_SET_ACK { Ok = 0, Ip = "A", Port = 9300 }.Put(writer, region));
+        Assert.Equal(Convert.FromHexString("0000000000000002410024540000000000000000"), output.ToArray());
+    }
+
+    [Fact]
     public void GameConnectAck_UsesCppFourByteUdpPort()
     {
         var region = RegionProfile.Taiwan;

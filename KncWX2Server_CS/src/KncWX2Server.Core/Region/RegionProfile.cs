@@ -58,6 +58,7 @@ public sealed class RegionProfile
     // GameServer / Gameplay wire toggles (verified via g++ -E across TW/HK/CN/JP)
     public bool GoldTicket { get; init; } = true;                 // SERV_GOLD_TICKET (TW/HK)
     public bool GuaranteeUniquenessOfNameCn { get; init; }        // SERV_GUARANTEE_UNIQUENESS_OF_NAME_CN (CN)
+    public bool AccumulationSpiritSystem { get; init; }           // SERV_ACCUMULATION_SPIRIT_SYSTEM
     public bool UnitWaitDelete { get; init; }                     // SERV_UNIT_WAIT_DELETE (CN)
     public bool SharingBankQuestCash { get; init; } = true;       // SERV_SHARING_BANK_QUEST_CASH
     public bool Anniv4ThEvent { get; init; }                      // SERV_4TH_ANNIV_EVENT (JP)
