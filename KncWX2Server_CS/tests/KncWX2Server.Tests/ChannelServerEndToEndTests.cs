@@ -156,7 +156,7 @@ public sealed class ChannelServerEndToEndTests : IDisposable
         int offset = 0;
         while (offset < buf.Length)
         {
-            int read = await stream.ReadAsync(buf.AsMemory(offset)).WaitAsync(TimeSpan.FromSeconds(5));
+            int read = await stream.ReadAsync(buf.AsMemory(offset)).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
             if (read == 0) throw new EndOfStreamException();
             offset += read;
         }
