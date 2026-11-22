@@ -27,7 +27,8 @@ public abstract class KPerformer
     public void QueueEvent<T>(EventId eventId, T payload)
     {
         var ev = new KEvent();
-        ev.SetInProcess(PerformerTypeId, Uid > 0 ? [Uid] : null, eventId, payload);
+        long[]? trace = Uid > 0 ? new long[] { Uid } : null;
+        ev.SetInProcess(PerformerTypeId, trace, eventId, payload);
         QueueingEvent(ev);
     }
 
