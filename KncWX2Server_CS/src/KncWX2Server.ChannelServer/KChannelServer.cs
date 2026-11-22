@@ -403,7 +403,7 @@ public sealed class KChannelServer : KBaseServer
             if (_channelList.ContainsKey(tpl.ChannelId)) continue;
             _channelList[tpl.ChannelId] = new KChannelInfo
             {
-                ServerUid = Uid,
+                ServerUid = unchecked((int)Uid),
                 ChannelId = tpl.ChannelId,
                 ChannelName = $"Channel_{tpl.ChannelId}",
                 ServerGroupId = ServerGroupId,

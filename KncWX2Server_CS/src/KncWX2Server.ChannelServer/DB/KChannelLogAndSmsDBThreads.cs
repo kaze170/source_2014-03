@@ -109,7 +109,7 @@ public sealed class KChannelLogDBThread : KDBThread
                 var servers = Db.GetServerList(region.Code, serverClass: 3);
                 var toolServers = servers.Select(s => new KToolServerList
                 {
-                    ServerUid = s.Uid,
+                    ServerUid = unchecked((int)s.Uid),
                     ServerSetId = s.ServerGroupId,
                     ServerType = s.ServerClass,
                     ChannelId = 0,

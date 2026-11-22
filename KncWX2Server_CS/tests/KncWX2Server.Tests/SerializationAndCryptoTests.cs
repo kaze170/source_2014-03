@@ -42,6 +42,59 @@ public sealed class SerializationAndCryptoTests
     }
 
     [Fact]
+    public void ChannelListNotification_MatchesCppFourByteServerUidWireLayout()
+    {
+        // C++ KChannelInfo uses int for m_iServerUID. Two entries catch per-entry shifts.
+        byte[] expected = Convert.FromHexString(
+            "000000000000000200000001000003E800000001000000024100000000000000000024542457000003E8000000000000000000000000" +
+            "00000002000003E900000002000000024200000000000000000024542457000003E800000000000000000000000000000000");
+        var region = RegionProfile.Taiwan;
+        var packet = new KECH_GET_CHANNEL_LIST_NOT
+        {
+            ServerGroupId = 0,
+            ChannelList = new()
+            {
+                [1] = new KChannelInfo { ServerUid = 1000, ChannelId = 1, ChannelName = "A", MasterPort = 9300, NcUdpPort = 9303, MaxUser = 1000 },
+                [2] = new KChannelInfo { ServerUid = 1001, ChannelId = 2, ChannelName = "B", MasterPort = 9300, NcUdpPort = 9303, MaxUser = 1000 },
+            },
+        };
+        var output = new KSerBuffer();
+        var writer = new KSerializer(region);
+        writer.BeginWriting(output);
+        Assert.True(packet.Put(writer, region));
+        writer.EndWriting();
+        Assert.Equal(expected, output.ToArray());
+
+        var input = new KSerBuffer(expected);
+        var reader = new KSerializer(region);
+        reader.BeginReading(input);
+        var decoded = new KECH_GET_CHANNEL_LIST_NOT();
+        Assert.True(decoded.Get(reader, region));
+        Assert.Equal(expected.Length, input.ReadOffset);
+        Assert.Equal(1000, decoded.ChannelList[1].ServerUid);
+        Assert.Equal("B", decoded.ChannelList[2].ChannelName);
+        Assert.Equal(1001, decoded.ChannelList[2].ServerUid);
+    }
+
+    [Fact]
+    public void ToolServerList_UsesFourByteServerUid()
+    {
+        var region = RegionProfile.Taiwan;
+        var buffer = new KSerBuffer();
+        var writer = new KSerializer(region);
+        writer.BeginWriting(buffer);
+        Assert.True(new KToolServerList { ServerUid = 1000, ServerSetId = 7 }.Put(writer, region));
+        writer.EndWriting();
+        Assert.Equal(Convert.FromHexString("000003E8000000070000000000000000000000000000000000000000"), buffer.ToArray());
+        var reader = new KSerializer(region);
+        reader.BeginReading(new KSerBuffer(buffer.ToArray()));
+        var result = new KToolServerList();
+        Assert.True(result.Get(reader, region));
+        Assert.Equal(1000, result.ServerUid);
+        Assert.Equal(7, result.ServerSetId);
+    }
+
+    [Fact]
     public void KSerBuffer_CompressAndUncompress_Roundtrip()
     {
         var original = Enumerable.Range(0, 500).Select(i => (byte)(i & 0xFF)).ToArray();

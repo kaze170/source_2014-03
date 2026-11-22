@@ -944,7 +944,9 @@ public sealed class SqliteDatabaseManager
             {
                 ChannelId = cid,
                 ServerGroupId = r.GetInt32(1),
-                ServerUid = r.GetInt64(2),
+                // Server identifiers in this database may contain 64-bit group bits;
+                // the C++ channel wire field carries the low 32 bits.
+                ServerUid = unchecked((int)r.GetInt64(2)),
                 ChannelName = r.GetString(3),
                 MaxUser = r.GetInt32(4),
                 CurrentUser = r.GetInt32(5),

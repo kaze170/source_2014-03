@@ -137,7 +137,7 @@ public sealed class KChannelBonusInfo : IKSerializable
 
 public sealed class KChannelInfo : IKSerializable
 {
-    public long ServerUid { get; set; }
+    public int ServerUid { get; set; }
     public int ChannelId { get; set; }
     public string ChannelName { get; set; } = string.Empty;
     public int ServerGroupId { get; set; }
@@ -186,7 +186,7 @@ public sealed class KChannelInfo : IKSerializable
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
-        if (!ks.Get(out long suid)) return false;
+        if (!ks.Get(out int suid)) return false;
         if (!ks.Get(out int cid)) return false;
         if (!ks.GetWideString(out var cname)) return false;
         if (!ks.Get(out int sgid)) return false;
@@ -307,7 +307,7 @@ public sealed class KCCUInfo : IKSerializable
 
 public sealed class KToolServerList : IKSerializable
 {
-    public long ServerUid { get; set; }
+    public int ServerUid { get; set; }
     public int ServerSetId { get; set; }
     public int ServerType { get; set; }
     public int ChannelId { get; set; }
@@ -326,7 +326,7 @@ public sealed class KToolServerList : IKSerializable
 
     public bool Get(KSerializer ks, RegionProfile region)
     {
-        if (!ks.Get(out long suid)) return false;
+        if (!ks.Get(out int suid)) return false;
         if (!ks.Get(out int ssid)) return false;
         if (!ks.Get(out int st)) return false;
         if (!ks.Get(out int cid)) return false;
