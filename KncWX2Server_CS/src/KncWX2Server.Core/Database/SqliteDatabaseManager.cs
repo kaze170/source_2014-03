@@ -102,6 +102,14 @@ public sealed class SqliteDatabaseManager
                     UNIQUE (RegionCode, UserID)
                 );
 
+                CREATE TABLE IF NOT EXISTS AccountPassports (
+                    RegionCode TEXT NOT NULL,
+                    UserID TEXT NOT NULL,
+                    TokenHash TEXT NOT NULL,
+                    ExpiresAt INTEGER NOT NULL,
+                    PRIMARY KEY (RegionCode, UserID)
+                );
+
                 CREATE TABLE IF NOT EXISTS MachineBlocks (
                     MachineID TEXT PRIMARY KEY,
                     Reason TEXT NOT NULL DEFAULT '',
@@ -891,6 +899,59 @@ public sealed class SqliteDatabaseManager
             return (NetError.ERR_VERIFY_03, 0, 0, false, string.Empty);
 
         return (NetError.NET_OK, uid, authLevel, isGuest, string.Empty);
+    }
+
+    // A passport is issued only after channel authentication and shared via SQLite with
+    // the game server. Store only its hash; a new login invalidates the previous token.
+    public string IssueAccountPassport(string regionCode, string userId)
+    {
+        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO AccountPassports (RegionCode, UserID, TokenHash, ExpiresAt)
+            VALUES ($r, $id, $hash, $expiry)
+            ON CONFLICT (RegionCode, UserID) DO UPDATE SET TokenHash=excluded.TokenHash, ExpiresAt=excluded.ExpiresAt;
+            """;
+        cmd.Parameters.AddWithValue("$r", regionCode);
+        cmd.Parameters.AddWithValue("$id", userId);
+        cmd.Parameters.AddWithValue("$hash", HashPassword(token));
+        cmd.Parameters.AddWithValue("$expiry", DateTimeOffset.UtcNow.AddHours(8).ToUnixTimeSeconds());
+        cmd.ExecuteNonQuery();
+        return token;
+    }
+
+    public (int NetErr, long UserUid, int AuthLevel, bool IsGuest, string BlockReason) VerifyAccountPassport(
+        string regionCode, string userId, string token)
+    {
+        if (string.IsNullOrEmpty(token))
+            return (NetError.ERR_VERIFY_03, 0, 0, false, string.Empty);
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT a.UserUID, a.AuthLevel, a.IsGuestUser, a.IsBlocked, a.BlockReason
+            FROM AccountPassports p JOIN Accounts a ON a.RegionCode=p.RegionCode AND a.UserID=p.UserID
+            WHERE p.RegionCode=$r AND p.UserID=$id AND p.TokenHash=$hash AND p.ExpiresAt>$now;
+            """;
+        cmd.Parameters.AddWithValue("$r", regionCode);
+        cmd.Parameters.AddWithValue("$id", userId);
+        cmd.Parameters.AddWithValue("$hash", HashPassword(token));
+        cmd.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read()) return (NetError.ERR_VERIFY_03, 0, 0, false, string.Empty);
+        long uid = reader.GetInt64(0);
+        int level = reader.GetInt32(1);
+        bool guest = reader.GetInt32(2) != 0;
+        string reason = reader.GetString(4);
+        return (reader.GetInt32(3) != 0 ? NetError.ERR_VERIFY_04 : NetError.NET_OK, uid, level, guest, reason);
+    }
+
+    public (int NetErr, long UserUid, int AuthLevel, bool IsGuest, string BlockReason) VerifyGameCredential(
+        string regionCode, string userId, string credential)
+    {
+        var passport = VerifyAccountPassport(regionCode, userId, credential);
+        if (passport.NetErr != NetError.ERR_VERIFY_03 || string.IsNullOrEmpty(credential)) return passport;
+        return VerifyOrRegisterAccount(regionCode, userId, credential);
     }
 
     public KServerInfo? GetServerInfo(string regionCode, string ip, int serverClass = 4, int serverGroupId = -1)

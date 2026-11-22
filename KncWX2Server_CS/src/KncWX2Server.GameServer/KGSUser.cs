@@ -623,7 +623,7 @@ public sealed class KGSUser : KActor
             case EventId.EGS_VERIFY_ACCOUNT_REQ:
             {
                 var req = ev.GetPayload<KUserAuthenticateReq>(Region);
-                var (netErr, userUid, authLevel, isGuest, _) = _server.Db.VerifyOrRegisterAccount(
+                var (netErr, userUid, authLevel, isGuest, _) = _server.Db.VerifyGameCredential(
                     Region.Code, req.UserId, req.Password);
 
                 if (netErr == NetError.NET_OK && userUid > 0)
@@ -9448,7 +9448,7 @@ public sealed class KGSUser : KActor
                     break;
                 }
 
-                var (netErr, userUid, authLevel, isGuest, _) = _server.Db.VerifyOrRegisterAccount(
+                var (netErr, userUid, authLevel, isGuest, _) = _server.Db.VerifyGameCredential(
                     Region.Code, req.VerifyAccountReq.UserId, req.VerifyAccountReq.Password);
                 if (netErr != NetError.NET_OK || userUid <= 0)
                 {

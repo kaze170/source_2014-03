@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using KncWX2Server.Core.Database;
 using KncWX2Server.Core.Events;
 using KncWX2Server.Core.Framework;
@@ -79,7 +78,7 @@ public sealed class KChannelAccountDBThread : KDBThread
             autoCreateOnMissing: !string.IsNullOrEmpty(req.ServiceAccountId) && string.IsNullOrEmpty(req.Password));
 
         string otp = netErr == NetError.NET_OK
-            ? Convert.ToHexString(RandomNumberGenerator.GetBytes(16))
+            ? Db.IssueAccountPassport(region.Code, req.ServiceAccountId)
             : string.Empty;
 
         var ack = new KDBE_CH_USER_GENERAL_LOGIN_ACK
@@ -100,11 +99,7 @@ public sealed class KChannelAccountDBThread : KDBThread
         var req = ev.GetPayload<KDBE_CH_USER_KOGOTP_LOGIN_REQ>(region);
         long actorUid = ev.Trace0;
 
-        var (netErr, userUid, _, _, _) = Db.VerifyOrRegisterAccount(
-            region.Code,
-            req.ServiceAccountId,
-            string.Empty,
-            autoCreateOnMissing: false);
+        var (netErr, userUid, _, _, _) = Db.VerifyAccountPassport(region.Code, req.ServiceAccountId, req.Otp);
 
         var ack = new KDBE_CH_USER_KOGOTP_LOGIN_ACK
         {

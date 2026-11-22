@@ -36,6 +36,33 @@ public sealed class SqliteAndMoonSharpTests : IDisposable
     }
 
     [Fact]
+    public void ChannelPassport_IsSharedWithGameServerAndRequiresValidUnexpiredToken()
+    {
+        var channelDb = new SqliteDatabaseManager(_dbPath);
+        channelDb.InitializeAndSeed();
+        var gameDb = new SqliteDatabaseManager(_dbPath);
+        Assert.Equal(NetError.NET_OK, channelDb.VerifyOrRegisterAccount("TW", "test01", "test01").NetErr);
+        string token = channelDb.IssueAccountPassport("TW", "test01");
+        Assert.Equal(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "test01", token).NetErr);
+        Assert.Equal(NetError.NET_OK, channelDb.VerifyAccountPassport("TW", "test01", token).NetErr);
+        Assert.Equal(NetError.ERR_VERIFY_03, gameDb.VerifyGameCredential("TW", "test01", "").NetErr);
+        Assert.NotEqual(NetError.NET_OK, gameDb.VerifyGameCredential("HK", "test01", token).NetErr);
+        Assert.NotEqual(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "gm01", token).NetErr);
+        Assert.NotEqual(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "test01", token + "x").NetErr);
+        string replacement = channelDb.IssueAccountPassport("TW", "test01");
+        Assert.NotEqual(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "test01", token).NetErr);
+        Assert.Equal(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "test01", replacement).NetErr);
+        using (var conn = channelDb.OpenConnection())
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "UPDATE AccountPassports SET ExpiresAt=0 WHERE RegionCode='TW' AND UserID='test01'";
+            cmd.ExecuteNonQuery();
+        }
+        Assert.NotEqual(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "test01", replacement).NetErr);
+        Assert.Equal(NetError.NET_OK, gameDb.VerifyGameCredential("TW", "test01", "test01").NetErr);
+    }
+
+    [Fact]
     public void MoonSharp_ExecutesChannelLuaConfig_And_WaitQueueScript()
     {
         using var server = new ChannelServerTestHarness(_dbPath, RegionCode.TW);
