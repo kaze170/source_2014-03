@@ -9424,17 +9424,23 @@ public sealed class KGSUser : KActor
             case EventId.EGS_SELECT_SERVER_SET_REQ:
             {
                 if (Fsm.StateId != KGSFSM.S_SERVER_SELECT) break;
-                var req = ev.GetPayload<KEGS_SELECT_SERVER_SET_REQ>(Region);
-                if (AuthLevel is >= 2 and <= 9 && AuthLevel is not (2 or 3 or 4))
+                // The original client leaves m_ServerSetID uninitialised and the C++
+                // handler ignores it: the game-server connection already determines
+                // the server set. Still reject truncated payloads.
+                if (!ev.TryReadPayload<KEGS_SELECT_SERVER_SET_REQ>(Region, out _))
                 {
-                    // Guard only explicitly negative/blocked levels (>=10 or account-block entries)
+                    KLog.Cwarn("Malformed EGS_SELECT_SERVER_SET_REQ");
+                    break;
                 }
+
                 bool isBlocked = _server.Db.IsAccountBlocked(Region.Code, UserId, out string blockReason);
-                if (isBlocked)
+                if (isBlocked || AuthLevel is >= -9 and <= -2)
                 {
                     SendPacket(EventId.EGS_SELECT_SERVER_SET_ACK, new KEGS_SELECT_SERVER_SET_ACK
                     {
-                        Ok = NetError.ERR_VERIFY_11,
+                        Ok = Region.AccountBlockMessageRenewal
+                            ? Region.ResolveNetError(NetErrorKey.ERR_ACCOUNT_BLOCK_01)
+                            : NetError.ERR_VERIFY_11,
                         AccountBlockInfo = new KAccountBlockInfo
                         {
                             BlockReason = blockReason,
@@ -9445,19 +9451,11 @@ public sealed class KGSUser : KActor
                     break;
                 }
 
-                var server = _server.Db.GetServerList(Region.Code)
-                    .FirstOrDefault(s => s.ServerGroupId == req.ServerSetId && s.ServerClass == 1);
-                if (server == null)
-                {
-                    SendPacket(EventId.EGS_SELECT_SERVER_SET_ACK, new KEGS_SELECT_SERVER_SET_ACK { Ok = NetError.ERR_CHANNEL_CHANGE_09 });
-                    break;
-                }
-
                 SendPacket(EventId.EGS_SELECT_SERVER_SET_ACK, new KEGS_SELECT_SERVER_SET_ACK
                 {
                     Ok = NetError.NET_OK,
-                    Ip = string.IsNullOrEmpty(server.PublicIp) ? server.Ip : server.PublicIp,
-                    Port = server.MasterPort > 0 ? server.MasterPort : _server.ListenPort,
+                    Ip = _server.PrivateIp,
+                    Port = _server.ListenPort,
                 });
                 break;
             }

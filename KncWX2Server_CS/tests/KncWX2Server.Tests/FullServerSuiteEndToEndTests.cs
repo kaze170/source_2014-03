@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Net;
 using System.Net.Sockets;
 using KncWX2Server.CenterServer;
 using KncWX2Server.Core.Events;
@@ -97,6 +98,26 @@ public sealed class FullServerSuiteEndToEndTests : IDisposable
             var stateAck = await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan);
             Assert.Equal(EventId.EGS_STATE_CHANGE_SERVER_SELECT_ACK, stateAck.EventId);
             Assert.Equal(NetError.NET_OK, stateAck.GetPayload<KEGS_STATE_CHANGE_SERVER_SELECT_ACK>(RegionProfile.Taiwan).Ok);
+
+            // The retail client sends an uninitialised server-set integer; C++ ignores it.
+            foreach (int ignoredServerSet in new[] { 0, 0x001AF5A0, -1 })
+            {
+                await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                    EventId.EGS_SELECT_SERVER_SET_REQ, new KEGS_SELECT_SERVER_SET_REQ { ServerSetId = ignoredServerSet });
+                var selectEvent = await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(EventId.EGS_SELECT_SERVER_SET_ACK, selectEvent.EventId);
+                Assert.True(selectEvent.TryReadPayload<KEGS_SELECT_SERVER_SET_ACK>(RegionProfile.Taiwan, out var selectAck));
+                Assert.Equal(NetError.NET_OK, selectAck.Ok);
+                Assert.Equal(game.PrivateIp, selectAck.Ip);
+                Assert.Equal(game.ListenPort, selectAck.Port);
+            }
+            await SendNoParamAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
+                EventId.EGS_CHARACTER_LIST_REQ);
+            var characterListEvent = await ReadEventAsync(gsStream, gsSa, RegionProfile.Taiwan).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(EventId.EGS_CHARACTER_LIST_ACK, characterListEvent.EventId);
+            Assert.True(characterListEvent.TryReadPayload<KEGS_CHARACTER_LIST_ACK>(RegionProfile.Taiwan, out var characterList));
+            Assert.Equal(NetError.NET_OK, characterList.Ok);
+            Assert.Equal("test01", characterList.UserId);
 
             // Create Unit
             await SendPacketAsync(gsStream, gsSa, gsSpi, RegionProfile.Taiwan, PerformerId.PI_GS_USER,
