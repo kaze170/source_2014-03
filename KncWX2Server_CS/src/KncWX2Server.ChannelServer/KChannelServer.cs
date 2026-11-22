@@ -224,8 +224,7 @@ public sealed class KChannelServer : KBaseServer
         else
             ServerGroupId = Region.Region == RegionCode.CN ? 1 : 0;
 
-        if (overridePort.HasValue)
-            _netLayer.Port = overridePort.Value;
+        _netLayer.Port = overridePort ?? Region.DefaultChannelPort;
 
         base.Init();
         RegToLua();
@@ -270,6 +269,8 @@ public sealed class KChannelServer : KBaseServer
         RegionProfile.SetCurrent(Region);
         _simLayer.NationFlag = Region.DefaultNationFlag;
         ServerGroupId = newRegion == RegionCode.CN ? 1 : 0;
+        if (!IsRunning)
+            _netLayer.Port = Region.DefaultChannelPort;
 
         if (!string.IsNullOrWhiteSpace(configLuaPath) && File.Exists(configLuaPath))
             ScriptManager.DoFile(configLuaPath);

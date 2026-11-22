@@ -20,7 +20,7 @@
                 <ComboBox x:Name="RegionCombo" Width="160" Margin="0,0,12,0" SelectionChanged="RegionCombo_SelectionChanged" />
 
                 <TextBlock Text="Port:" VerticalAlignment="Center" Margin="0,0,6,0" />
-                <TextBox x:Name="PortTextBox" Text="9100" Width="65" Margin="0,0,12,0" VerticalContentAlignment="Center" />
+                <TextBox x:Name="PortTextBox" Text="9400" Width="65" Margin="0,0,12,0" VerticalContentAlignment="Center" />
 
                 <TextBlock Text="GroupID:" VerticalAlignment="Center" Margin="0,0,6,0" />
                 <TextBox x:Name="GroupIdTextBox" Text="0" Width="45" Margin="0,0,12,0" VerticalContentAlignment="Center" />

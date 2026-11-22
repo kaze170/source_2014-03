@@ -12,7 +12,7 @@ public sealed class KChannelNetLayer : KNetLayer
     public KChannelNetLayer(KChannelServer server)
     {
         _server = server;
-        Port = 9100;
+        Port = server.Region.DefaultChannelPort;
     }
 
     public override bool Init()

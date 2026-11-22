@@ -710,30 +710,34 @@ public sealed class SqliteDatabaseManager
 
         foreach (var (code, groups) in regions)
         {
+            var profile = RegionProfile.FromCode(Enum.Parse<RegionCode>(code));
             int order = 0;
             foreach (var (gid, gname) in groups)
             {
                 using var gcmd = conn.CreateCommand();
                 gcmd.CommandText = """
                     INSERT OR IGNORE INTO ServerGroups (RegionCode, ServerGroupID, ServerGroupName, FirstServerIP, FirstServerPort, OrderIndex, IsEnable)
-                    VALUES ($r, $gid, $gname, '127.0.0.1', 9100, $ord, 1);
+                    VALUES ($r, $gid, $gname, '127.0.0.1', $chPort, $ord, 1);
                     """;
                 gcmd.Parameters.AddWithValue("$r", code);
                 gcmd.Parameters.AddWithValue("$gid", gid);
                 gcmd.Parameters.AddWithValue("$gname", gname);
+                gcmd.Parameters.AddWithValue("$chPort", profile.DefaultChannelPort);
                 gcmd.Parameters.AddWithValue("$ord", order++);
                 gcmd.ExecuteNonQuery();
 
-                long chServerUid = KncUid.MakeUid(RegionProfile.FromCode(Enum.Parse<RegionCode>(code)), gid, 1000 + gid);
+                long chServerUid = KncUid.MakeUid(profile, gid, 1000 + gid);
                 using var scmd = conn.CreateCommand();
                 scmd.CommandText = """
                     INSERT OR IGNORE INTO ServerList (RegionCode, ServerUID, ServerName, ServerGroupID, ServerClass, PublicIP, PrivateIP, MasterPort, ClientPort, MaxUser, IsEnabled)
-                    VALUES ($r, $uid, $name, $gid, 4, '127.0.0.1', '127.0.0.1', 9101, 9100, 3000, 1);
+                    VALUES ($r, $uid, $name, $gid, 4, '127.0.0.1', '127.0.0.1', $chMasterPort, $chPort, 3000, 1);
                     """;
                 scmd.Parameters.AddWithValue("$r", code);
                 scmd.Parameters.AddWithValue("$uid", chServerUid);
                 scmd.Parameters.AddWithValue("$name", $"{code}_ChannelServer_{gid}");
                 scmd.Parameters.AddWithValue("$gid", gid);
+                scmd.Parameters.AddWithValue("$chMasterPort", profile.DefaultChannelPort + 1);
+                scmd.Parameters.AddWithValue("$chPort", profile.DefaultChannelPort);
                 scmd.ExecuteNonQuery();
 
                 for (int ch = 1; ch <= 3; ch++)
@@ -749,23 +753,47 @@ public sealed class SqliteDatabaseManager
                     ccmd.Parameters.AddWithValue("$gid", gid);
                     ccmd.Parameters.AddWithValue("$uid", chServerUid);
                     ccmd.Parameters.AddWithValue("$cname", $"{gname} CH-{ch}");
-                    ccmd.Parameters.AddWithValue("$port", 9300 + ch);
+                    ccmd.Parameters.AddWithValue("$port", profile.DefaultGamePort);
                     ccmd.ExecuteNonQuery();
                 }
 
                 // Seed a virtual GameServer entry for E_TOOL_SERVER_LIST_ACK / DBE_GET_GAME_SERVER_LIST_ACK
-                long gsUid = KncUid.MakeUid(RegionProfile.FromCode(Enum.Parse<RegionCode>(code)), gid, 2000 + gid);
+                long gsUid = KncUid.MakeUid(profile, gid, 2000 + gid);
                 using var gsCmd = conn.CreateCommand();
                 gsCmd.CommandText = """
                     INSERT OR IGNORE INTO ServerList (RegionCode, ServerUID, ServerName, ServerGroupID, ServerClass, PublicIP, PrivateIP, MasterPort, ClientPort, MaxUser, IsEnabled)
-                    VALUES ($r, $uid, $name, $gid, 3, '127.0.0.1', '127.0.0.1', 9301, 9300, 3000, 1);
+                    VALUES ($r, $uid, $name, $gid, 3, '127.0.0.1', '127.0.0.1', $trPort, $gsPort, 3000, 1);
                     """;
                 gsCmd.Parameters.AddWithValue("$r", code);
                 gsCmd.Parameters.AddWithValue("$uid", gsUid);
                 gsCmd.Parameters.AddWithValue("$name", $"{code}_GameServer_{gid}");
                 gsCmd.Parameters.AddWithValue("$gid", gid);
+                gsCmd.Parameters.AddWithValue("$trPort", profile.DefaultTrPort);
+                gsCmd.Parameters.AddWithValue("$gsPort", profile.DefaultGamePort);
                 gsCmd.ExecuteNonQuery();
             }
+
+            // Migrate prior local dev placeholder ports (9100/9101 -> official 9400/12400, ChannelList 9301..9303 -> DefaultGamePort)
+            using var migCmd = conn.CreateCommand();
+            migCmd.CommandText = """
+                UPDATE ServerGroups SET FirstServerPort = $chPort
+                WHERE RegionCode = $r AND FirstServerIP = '127.0.0.1' AND FirstServerPort = 9100;
+
+                UPDATE ServerList SET MasterPort = $chMasterPort, ClientPort = $chPort
+                WHERE RegionCode = $r AND ServerClass = 4 AND PublicIP = '127.0.0.1' AND ClientPort = 9100;
+
+                UPDATE ChannelList SET Port = $gsPort
+                WHERE RegionCode = $r AND IP = '127.0.0.1' AND Port IN (9301, 9302, 9303);
+
+                UPDATE ServerList SET MasterPort = $trPort, ClientPort = $gsPort
+                WHERE RegionCode = $r AND ServerClass = 3 AND PublicIP = '127.0.0.1' AND ClientPort = 9300 AND MasterPort = 9301;
+                """;
+            migCmd.Parameters.AddWithValue("$r", code);
+            migCmd.Parameters.AddWithValue("$chPort", profile.DefaultChannelPort);
+            migCmd.Parameters.AddWithValue("$chMasterPort", profile.DefaultChannelPort + 1);
+            migCmd.Parameters.AddWithValue("$gsPort", profile.DefaultGamePort);
+            migCmd.Parameters.AddWithValue("$trPort", profile.DefaultTrPort);
+            migCmd.ExecuteNonQuery();
 
             // Default dev test accounts per region
             EnsureAccountInternal(conn, code, "test01", "test01", authLevel: 2);

@@ -7,7 +7,7 @@ namespace KncWX2Server.Core.Framework;
 /// </summary>
 public abstract class KNetLayer
 {
-    public ushort Port { get; set; } = 9100;
+    public ushort Port { get; set; } = 9400;
     public bool CheckSequenceNum { get; set; } = true;
     public uint PacketAuthFailLimit { get; set; } = 100;
     public KIocpServer TcpServer { get; } = new();

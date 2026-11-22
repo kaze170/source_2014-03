@@ -66,14 +66,14 @@ public sealed class RegionProfile
     public bool NewItemSystem2013 { get; init; } = true;          // SERV_NEW_ITEM_SYSTEM_2013_05
     public bool KeyMappingInt { get; init; }                      // SERV_KEY_MAPPING_INT (CN/EU/JP/US)
 
-    // Default server ports for this region (matches C++ ServerDefine / TRServer.cpp / config)
-    public ushort DefaultChannelPort { get; init; } = 9100;
+    // Default server ports for this region (Channel=9400 per X2Main.cpp, Game=9300 per config_rb.lua, TR=9301 per TRServer.cpp)
+    public ushort DefaultChannelPort { get; init; } = 9400;
     public ushort DefaultLoginPort { get; init; } = 9200;
     public ushort DefaultGamePort { get; init; } = 9300;
     public ushort DefaultTrPort { get; init; } = 9301;
     public ushort DefaultUdpEchoPort { get; init; } = 9302;
     public ushort DefaultUdpRelayPort { get; init; } = 9303;
-    public ushort DefaultCenterPort { get; init; } = 9400;
+    public ushort DefaultCenterPort { get; init; } = 9100;
     public ushort DefaultGlobalPort { get; init; } = 9500;
 
     // Default regional policy metadata
@@ -138,13 +138,13 @@ public sealed class RegionProfile
         Anniv4ThEvent = true,
         GlobalEventTable = true,
         KeyMappingInt = true,
-        DefaultChannelPort = 12100,
+        DefaultChannelPort = 12400,
         DefaultLoginPort = 12200,
         DefaultGamePort = 12300,
         DefaultTrPort = 12301,
         DefaultUdpEchoPort = 12302,
         DefaultUdpRelayPort = 12303,
-        DefaultCenterPort = 12400,
+        DefaultCenterPort = 12100,
         DefaultGlobalPort = 12500,
     };
 

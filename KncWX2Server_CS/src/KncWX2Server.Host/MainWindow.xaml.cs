@@ -170,6 +170,7 @@ public partial class MainWindow : Window
             _globalServer.SwitchRegion(profile.Region);
             _loginServer.SwitchRegion(profile.Region);
             _gameServer.SwitchRegion(profile.Region);
+            PortTextBox.Text = _channelServer.Region.DefaultChannelPort.ToString();
             GroupIdTextBox.Text = _channelServer.ServerGroupId.ToString();
             RefreshUiState();
             RefreshMonitorGrids();
