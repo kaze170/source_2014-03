@@ -25,6 +25,8 @@ public class FSMClass
     private readonly Dictionary<int, FSMState> _states = new();
 
     public int CurrentState { get; protected set; }
+    public int StateId => CurrentState;
+    public int CurrentStateId => CurrentState;
 
     public FSMClass(int initialState)
     {

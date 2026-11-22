@@ -43,11 +43,12 @@ public sealed class KBillManager : KPerformer
 
     public bool BonusCashEventActive { get; set; }
     public int PageSize { get; set; } = DefaultNumProductPerPage;
+    public RegionProfile Region { get; set; }
     public override uint PerformerTypeId => PerformerId.PI_GS_KOG_BILLING_MANAGER;
 
     public KBillManager(RegionProfile? region = null)
-        : base(region ?? RegionProfile.Current)
     {
+        Region = region ?? RegionProfile.Current;
         long now = Environment.TickCount64;
         _lastProductCheckTickMs = now - ProductCheckGapMs;
         _lastCashEventCheckTickMs = now - CashEventCheckGapMs;

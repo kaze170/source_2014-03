@@ -24,6 +24,13 @@ public abstract class KPerformer
             MaxQueueSize = cnt;
     }
 
+    public void QueueEvent<T>(EventId eventId, T payload)
+    {
+        var ev = new KEvent { EventId = eventId };
+        ev.SetInProcess(payload);
+        QueueingEvent(ev);
+    }
+
     public virtual void Tick()
     {
         while (_eventQueue.TryDequeue(out var ev))

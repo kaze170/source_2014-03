@@ -522,10 +522,11 @@ public sealed class KGSFieldZone
                         info.EquippedItem = req.InventorySlotInfo.Select(i => new KInventoryItemSimpleInfo
                         {
                             ItemUid = i.ItemUid,
-                            ItemId = i.ItemId,
+                            ItemId = i.ItemInfo.ItemId,
                             SlotCategory = i.SlotCategory,
                             SlotId = i.SlotId,
-                            EnchantLevel = i.EnchantLevel,
+                            EnchantLevel = i.ItemInfo.EnchantLevel,
+                            AttribEnchantInfo = i.ItemInfo.AttribEnchantInfo,
                         }).ToList();
                     }
                 }

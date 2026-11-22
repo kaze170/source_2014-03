@@ -5222,6 +5222,9 @@ public sealed class KEGS_JOIN_PERSONAL_SHOP_ACK : IKSerializable
 
 public sealed class KEGS_JOIN_MY_PSHOP_AGENCY_REQ : IKSerializable
 {
+    public const sbyte JtShowMyItemList = 0;
+    public const sbyte JtForPickUp = 1;
+
     public sbyte JoinType { get; set; }
     public bool Put(KSerializer ks, RegionProfile region) => ks.Put(JoinType);
     public bool Get(KSerializer ks, RegionProfile region)
@@ -8562,7 +8565,7 @@ public sealed class KEGS_OPEN_RANDOM_ITEM_DEVELOPER_REQ : IKSerializable
 public sealed class KEGS_OPEN_RANDOM_ITEM_DEVELOPER_ACK : IKSerializable
 {
     public int Ok { get; set; }
-    public Dictionary<int, KRandomItemResult> RandomItemResult { get; } = new();
+    public Dictionary<int, KRandomItemResult> RandomItemResult { get; set; } = new();
 
     public bool Put(KSerializer ks, RegionProfile region) =>
         ks.Put(Ok) && ks.PutMap(RandomItemResult, static (s, k) => s.Put(k), static (s, v) => s.Put(v));

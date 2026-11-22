@@ -68,7 +68,7 @@ public sealed class KGSUser : KActor
     private readonly Dictionary<int, List<(long UnitUid, int State, string RegDate)>> _dailyGiftBoxList = new();
     public Dictionary<int, double> QuickSlotCooldownSeconds { get; } = new();
     public HashSet<int> BattleFieldBlockedQuickSlotItemIds { get; } = new();
-    private ushort _pendingDisconnectEventId = EventId.EGS_DISCONNECT_FOR_CHANNEL_CHANGE_REQ;
+    private EventId _pendingDisconnectEventId = EventId.EGS_DISCONNECT_FOR_CHANNEL_CHANGE_REQ;
     private DateTime _lastKnmRefreshUtc = DateTime.MinValue;
     private int _antiAddictionType;
     private int _antiAddictionPlayMinutes;
@@ -295,7 +295,7 @@ public sealed class KGSUser : KActor
         if (!HackingManager.CheckHackingUserReceivedPacket(out _, nowUtc))
         {
             SendPacket(EventId.EGS_CHECK_HACK_USER_PACKET_REQUEST_NOT, new KPacketOK { Ok = NetError.NET_OK });
-            if (gsv.HackingUserKick)
+            if (gsv.IsHackUserKick)
                 ReserveDestroy();
         }
         CheckDeserializeFailCount(nowUtc);
@@ -467,7 +467,7 @@ public sealed class KGSUser : KActor
             IsSpiritUpdated = false,
             PShopAgencyInfo = pshopAgency,
             PacketHenirRewardCount = henirRewardCount,
-            CashShopOpen = _server.ContentManager.IsCashShopEnabled(),
+            CashShopOpen = _server.ContentManager.IsEnableCashShop,
             FirstSelect = false,
             Couple = !RelationshipManager.IsSolo,
             RelationTargetUserUid = RelationshipManager.LoverUnitUid,
@@ -531,7 +531,7 @@ public sealed class KGSUser : KActor
         InventoryLocker.Clear();
         UnitManager.Clear();
         if (AccountUid > 0)
-            _server.ChannelingUserManager.UpdateChannelingUserList(login: false, Region.DefaultChannelingCode, gameServerLoggedIn: true);
+            _server.ChannelingUserManager.UpdateChannelingUserList(login: false, (int)Region.DefaultChannelingCode, gameServerLoggedIn: true);
         Fsm.TryStateTransition(KGSFSM.I_TO_EXIT, out _);
         _server.OnUserDisconnected(this);
     }
@@ -666,7 +666,7 @@ public sealed class KGSUser : KActor
                         Fsm.TryStateTransition(KGSFSM.I_TO_SERVER_SELECT, out _);
 
                     _server.RegisterAccountSession(this);
-                    _server.ChannelingUserManager.UpdateChannelingUserList(login: true, Region.DefaultChannelingCode);
+                    _server.ChannelingUserManager.UpdateChannelingUserList(login: true, (int)Region.DefaultChannelingCode);
 
                     SendPacket(EventId.EGS_VERIFY_ACCOUNT_ACK, new KEGS_VERIFY_ACCOUNT_ACK
                     {
@@ -1859,7 +1859,7 @@ public sealed class KGSUser : KActor
                     SendPacket(EventId.EGS_SELL_ED_ITEM_ACK, new KEGS_SELL_ED_ITEM_ACK { Ok = NetError.ERR_SELL_ED_ITEM_05, Ed = ActiveUnit.Ed });
                     break;
                 }
-                if (InventoryLocker.IsLocked)
+                if (InventoryLocker.IsLocked())
                 {
                     SendPacket(EventId.EGS_SELL_ED_ITEM_ACK, new KEGS_SELL_ED_ITEM_ACK { Ok = NetError.ERR_INVENTORY_LOCK_00, Ed = ActiveUnit.Ed });
                     break;
@@ -1990,7 +1990,7 @@ public sealed class KGSUser : KActor
                     }
 
                     var (eres, nextLvl, broken) = _server.EnchantItemManager.ExecuteInstanceEnchant(
-                        itemSlot.ItemInfo.EnchantLevel, req.IsSupportMaterial, req.IsEnchantPlus, req.IsDestroyGuard, req.IsRareEnchantStone);
+                        (byte)Math.Max((sbyte)0, itemSlot.ItemInfo.EnchantLevel), req.IsSupportMaterial, req.IsEnchantPlus, req.IsDestroyGuard, req.IsRareEnchantStone);
                     EdManager.TryAddEd(-enchantCostEd, KUserEDManager.EdReason.ErOutEdItemEnchant, out int afterEd);
                     _server.Db.UpdateUnitProgress(ActiveUnit.UnitUid, 0, -enchantCostEd, 0);
                     ActiveUnit.Ed = afterEd;
@@ -2044,7 +2044,7 @@ public sealed class KGSUser : KActor
                         SendPacket(EventId.EGS_RESTORE_ITEM_ACK, new KEGS_RESTORE_ITEM_ACK { Ok = NetError.ERR_ENCHANT_ITEM_01 });
                         break;
                     }
-                    var restored = _server.Db.UpdateItemEnchant(ActiveUnit.UnitUid, req.ItemUid, itemSlot.ItemInfo.EnchantLevel, isBroken: false);
+                    var restored = _server.Db.UpdateItemEnchant(ActiveUnit.UnitUid, req.ItemUid, (byte)Math.Max((sbyte)0, itemSlot.ItemInfo.EnchantLevel), isBroken: false);
                     rSlots.Add(restored);
                     SendPacket(EventId.EGS_RESTORE_ITEM_ACK, new KEGS_RESTORE_ITEM_ACK
                     {
@@ -2223,7 +2223,7 @@ public sealed class KGSUser : KActor
 
                 if (totalEdDeduct > 0)
                 {
-                    if (!EdManager.TryAddEd(-totalEdDeduct, KUserEDManager.EdReason.ErOutEdPostSend, out _))
+                    if (!EdManager.TryAddEd(-totalEdDeduct, KUserEDManager.EdReason.ErOutEdSendLetterCommission, out _))
                     {
                         SendPacket(EventId.EGS_SEND_LETTER_ACK, new KEGS_SEND_LETTER_ACK
                         {
@@ -2314,7 +2314,7 @@ public sealed class KGSUser : KActor
                 if (postItem.ScriptIndex == KUserLetterBox.EdiBronzeEd)
                 {
                     int edGain = Math.Max(0, postItem.Quantity);
-                    EdManager.TryAddEd(edGain, KUserEDManager.EdReason.ErInEdPostReceive, out _);
+                    EdManager.TryAddEd(edGain, KUserEDManager.EdReason.ErInEdGetEdFromLetter, out _);
                     _server.Db.UpdateUnitProgress(ActiveUnit.UnitUid, 0, edGain, 0);
                     ActiveUnit = _server.Db.GetUnitByUid(Region, ActiveUnit.UnitUid)!;
 
@@ -2858,7 +2858,7 @@ public sealed class KGSUser : KActor
                     else
                     {
                         bool isWeapon = itemSlot.ItemInfo.ItemId % 2 == 1;
-                        int inferredGrade = itemSlot.ItemInfo.SocketOption.Count >= 2 ? 4 :
+                        int inferredGrade = itemSlot.ItemInfo.ItemSockets.Count >= 2 ? 4 :
                             itemSlot.ItemInfo.EnchantLevel > 0 ? 3 : 2;
                         (outputs, jackpot) = _server.ResolveItemManager.ResolveItem(
                             ActiveUnit.Level, isWeapon, itemGrade: inferredGrade);
@@ -2932,7 +2932,7 @@ public sealed class KGSUser : KActor
                         break;
                     }
 
-                    if (EdManager.TryAddEd(-edCost, KUserEDManager.EdReason.ErOutEdItemAttribEnchant, out int afterEd))
+                    if (EdManager.TryAddEd(-edCost, KUserEDManager.EdReason.ErOutEdItemAttribute, out int afterEd))
                     {
                         _server.Db.UpdateUnitProgress(ActiveUnit.UnitUid, 0, -edCost, 0);
                         ActiveUnit.Ed = afterEd;
@@ -4233,7 +4233,7 @@ public sealed class KGSUser : KActor
             case EventId.EGS_DELETE_ITEM_REQ:
             {
                 if (ActiveUnit == null) break;
-                if (InventoryLocker.IsLocked)
+                if (InventoryLocker.IsLocked())
                 {
                     SendPacket(EventId.EGS_DELETE_ITEM_ACK, new KEGS_DELETE_ITEM_ACK { Ok = NetError.ERR_INVENTORY_LOCK_00 });
                     break;
@@ -4279,7 +4279,7 @@ public sealed class KGSUser : KActor
                 {
                     room.MonsterManager.CreateMonster(
                         eventNpcId,
-                        Math.Max(1, (int)ActiveUnit.Level),
+                        Math.Max((byte)1, ActiveUnit.Level),
                         KRoomMonsterManager.MonsterGrade.MG_NORMAL_NPC);
                 }
                 foreach (long uid in room.GetMemberUnitUids())
@@ -5234,7 +5234,8 @@ public sealed class KGSUser : KActor
                 if (ActiveUnit == null || CurrentPartyUid <= 0) break;
                 var req = ev.GetPayload<KPacketLong>(Region);
                 var party = _server.Center.PartyManager.GetParty(CurrentPartyUid);
-                bool ok = party != null && party.ChangeHost(ActiveUnit.UnitUid, req.Value, out long beforeUid, out long afterUid);
+                long beforeUid = 0, afterUid = 0;
+                bool ok = party != null && party.ChangeHost(ActiveUnit.UnitUid, req.Value, out beforeUid, out afterUid);
                 SendPacket(EventId.EGS_PARTY_CHANGE_HOST_ACK, new KPacketOK { Ok = ok ? NetError.NET_OK : NetError.ERR_PARTY_09 });
                 if (ok && party != null)
                 {
@@ -6182,7 +6183,7 @@ public sealed class KGSUser : KActor
                         var (aOk, aSlot) = _server.Db.DeleteInventoryItem(ActiveUnit.UnitUid, req.AttachItemUid, 1);
                         if (aOk) updated.Add(aSlot);
                     }
-                    var dbEncSlot = _server.Db.UpdateItemEnchant(ActiveUnit.UnitUid, req.DestItemUid, targetLv, false);
+                    var dbEncSlot = _server.Db.UpdateItemEnchant(ActiveUnit.UnitUid, req.DestItemUid, (byte)Math.Clamp((int)targetLv, 0, byte.MaxValue), false);
                     updated.Insert(0, dbEncSlot);
                     SendPacket(EventId.EGS_ENCHANT_ATTACH_ITEM_ACK, new KEGS_ENCHANT_ATTACH_ITEM_ACK
                     {
@@ -7812,7 +7813,7 @@ public sealed class KGSUser : KActor
                     SendPacket(EventId.EGS_JOIN_WEDDING_HALL_ACK, new KEGS_JOIN_WEDDING_HALL_ACK { Ok = NetError.ERR_RELATIONSHIP_31 });
                     break;
                 }
-                if (!KUserRelationshipManager.IsWeddingItem(invItem.ItemId, out _))
+                if (!KUserRelationshipManager.IsWeddingItem(invItem.ItemInfo.ItemId, out _))
                 {
                     SendPacket(EventId.EGS_JOIN_WEDDING_HALL_ACK, new KEGS_JOIN_WEDDING_HALL_ACK { Ok = NetError.ERR_RELATIONSHIP_32 });
                     break;
@@ -8465,7 +8466,7 @@ public sealed class KGSUser : KActor
                                 UnitClass = m.UnitClass,
                                 Level = m.Level,
                                 State = 1,
-                                StateCode = m.FieldUid,
+                                StateCode = (int)m.FieldUid,
                                 Host = m.Host,
                             });
                         }
@@ -10017,7 +10018,7 @@ public sealed class KGSUser : KActor
                         break;
                     }
                     int totalCommission = (int)Math.Min(int.MaxValue, (long)commissionEd * qty);
-                    if (totalCommission > 0 && !EdManager.TryAddEd(-totalCommission, KUserEDManager.EdReason.ErOutEdBuyItem, out _))
+                    if (totalCommission > 0 && !EdManager.TryAddEd(-totalCommission, KUserEDManager.EdReason.ErOutEdBuyItemNpcShop, out _))
                     {
                         SendPacket(EventId.EGS_ITEM_CONVERT_ACK, new KEGS_ITEM_CONVERT_ACK { Ok = NetError.ERR_EVALUATE_ITEM_08 });
                         break;
@@ -10025,7 +10026,7 @@ public sealed class KGSUser : KActor
                     var (delOk, delUpd) = _server.Db.DeleteInventoryItem(ActiveUnit.UnitUid, req.ItemUid, qty);
                     if (!delOk)
                     {
-                        if (totalCommission > 0) EdManager.TryAddEd(totalCommission, KUserEDManager.EdReason.ErInEdSellItem, out _);
+                        if (totalCommission > 0) EdManager.TryAddEd(totalCommission, KUserEDManager.EdReason.ErInEdSellItemNpcShop, out _);
                         SendPacket(EventId.EGS_ITEM_CONVERT_ACK, new KEGS_ITEM_CONVERT_ACK { Ok = NetError.ERR_ITEM_EXCHANGE_00 });
                         break;
                     }
@@ -10065,7 +10066,7 @@ public sealed class KGSUser : KActor
                         break;
                     }
                     const int evalFee = 1000;
-                    if (!EdManager.TryAddEd(-evalFee, KUserEDManager.EdReason.ErOutEdBuyItem, out int newEd))
+                    if (!EdManager.TryAddEd(-evalFee, KUserEDManager.EdReason.ErOutEdBuyItemNpcShop, out int newEd))
                     {
                         SendPacket(EventId.EGS_ITEM_EVALUATE_ACK, new KEGS_ITEM_EVALUATE_ACK { Ok = NetError.ERR_EVALUATE_ITEM_02 });
                         break;
@@ -10073,7 +10074,7 @@ public sealed class KGSUser : KActor
                     var (ok, _, updated) = _server.Db.SetInventoryItemEvalState(ActiveUnit.UnitUid, req.ItemUid, 0, 1);
                     if (ok != NetError.NET_OK || updated == null)
                     {
-                        EdManager.TryAddEd(evalFee, KUserEDManager.EdReason.ErInEdSellItem, out _);
+                        EdManager.TryAddEd(evalFee, KUserEDManager.EdReason.ErInEdSellItemNpcShop, out _);
                         SendPacket(EventId.EGS_ITEM_EVALUATE_ACK, new KEGS_ITEM_EVALUATE_ACK { Ok = ok });
                         break;
                     }
@@ -10987,7 +10988,7 @@ public sealed class KGSUser : KActor
                 var matched = coupons.FirstOrDefault(c => c.CouponCardNo == req.CouponCardNo);
                 var allTargets = matched?.TargetItem ?? [];
                 const int pageSize = 10;
-                int page = Math.Max(1, req.PageNum);
+                int page = Math.Max(1, (int)req.PageNum);
                 var pagedTargets = allTargets.Skip((page - 1) * pageSize).Take(pageSize).ToList();
                 SendPacket(EventId.EGS_COUPON_TARGET_ITEM_ACK, new KEGS_COUPON_TARGET_ITEM_ACK
                 {
@@ -11032,7 +11033,7 @@ public sealed class KGSUser : KActor
             {
                 SendPacket(EventId.EGS_GET_NAVER_ACCESS_TOKEN_ACK, new KEGS_GET_NAVER_ACCESS_TOKEN_ACK
                 {
-                    Ok = Region.Code == RegionCode.TW ? NetError.ERR_CONTENT_00 : NetError.NET_OK,
+                    Ok = Region.Region == RegionCode.TW ? NetError.ERR_CONTENT_00 : NetError.NET_OK,
                     AccessToken = string.Empty,
                 });
                 break;
@@ -11137,7 +11138,7 @@ public sealed class KGSUser : KActor
             case EventId.EGS_CASH_DIRECT_CHARGE_CN_REQ:
             {
                 var req = ev.GetPayload<KEGS_CASH_DIRECT_CHARGE_CN_REQ>(Region);
-                bool ok = Region.Code == RegionCode.CN && req.UserUid == AccountUid;
+                bool ok = Region.Region == RegionCode.CN && req.UserUid == AccountUid;
                 SendPacket(EventId.EGS_CASH_DIRECT_CHARGE_CN_ACK, new KEGS_CASH_DIRECT_CHARGE_CN_ACK
                 {
                     Ok = ok ? NetError.NET_OK : NetError.ERR_CONTENT_00,
@@ -12069,7 +12070,7 @@ public sealed class KGSUser : KActor
                     party.Info.DungeonId,
                     PcBangManager.IsPcBang && _server.GameSysValTable.IsSpiritFree(PcBangManager.PcBangType),
                     isHenirDungeon: KUserDungeonManager.IsHenirDungeon(party.Info.DungeonId),
-                    isSpiritEvent: _server.GameEventManager.IsChinaSpiritEventEnabled()))
+                    isSpiritEvent: _server.GameEventManager.IsChinaSpiritEventEnabled))
                 {
                     SendPacket(EventId.EGS_JOIN_PARTY_ACK, new KEGS_JOIN_PARTY_ACK { Ok = NetError.ERR_ROOM_27 });
                     break;
@@ -12149,7 +12150,7 @@ public sealed class KGSUser : KActor
                     req.DungeonId,
                     PcBangManager.IsPcBang && _server.GameSysValTable.IsSpiritFree(PcBangManager.PcBangType),
                     isHenirDungeon: KUserDungeonManager.IsHenirDungeon(req.DungeonId),
-                    isSpiritEvent: _server.GameEventManager.IsChinaSpiritEventEnabled()))
+                    isSpiritEvent: _server.GameEventManager.IsChinaSpiritEventEnabled))
                 {
                     SendPacket(EventId.EGS_PARTY_QUICK_JOIN_ACK, new KEGS_PARTY_QUICK_JOIN_ACK { Ok = NetError.ERR_ROOM_27 });
                     break;
@@ -13162,7 +13163,7 @@ public sealed class KGSUser : KActor
             case EventId.EGS_LOCAL_RANKING_USER_INFO_WRITE_REQ:
             {
                 var req = ev.GetPayload<KEGS_LOCAL_RANKING_USER_INFO_WRITE_REQ>(Region);
-                if (AuthLevel < 5 && !_server.StringFilterManager.CheckIsValidString(KStringFilterManager.FilterType.FtChat, req.Info.Profile))
+                if (AuthLevel < 5 && !_server.StringFilterManager.CheckIsValidString(KStringFilterManager.FilterType.FtWord, req.Info.Profile))
                 {
                     SendPacket(EventId.EGS_LOCAL_RANKING_USER_INFO_WRITE_ACK, new KEGS_LOCAL_RANKING_USER_INFO_WRITE_ACK { Ok = NetError.ERR_STRING_FILTER_02 });
                     break;
@@ -13620,7 +13621,7 @@ public sealed class KGSUser : KActor
             {
                 if (ActiveUnit == null) break;
                 var req = ev.GetPayload<KEGS_USE_MEGAPHONE_REQ>(Region);
-                if (AuthLevel < 5 && !_server.StringFilterManager.CheckIsValidString(KStringFilterManager.FilterType.FtChat, req.Message))
+                if (AuthLevel < 5 && !_server.StringFilterManager.CheckIsValidString(KStringFilterManager.FilterType.FtWord, req.Message))
                 {
                     SendPacket(EventId.EGS_USE_MEGAPHONE_ACK, new KEGS_USE_MEGAPHONE_ACK { Ok = NetError.ERR_STRING_FILTER_00 });
                     break;
@@ -14048,7 +14049,7 @@ public sealed class KGSUser : KActor
                     Ok = ack.Ok,
                     WeddingInfo = weddingInfo,
                     RoomInfo = new KRoomInfo { RoomUid = ack.RoomUid, RoomType = 6 },
-                    UdpRelayIp = _server.Region.PublicIp,
+                    UdpRelayIp = _server.PublicIp,
                     UdpRelayPort = _server.UdpRelayPort,
                 });
                 break;
@@ -14627,7 +14628,7 @@ public sealed class KGSUser : KActor
                 else if (ev.Buffer.Length > 0)
                     ackOk = ev.GetPayload<KELG_USER_DISCONNECT_ACK>(Region).Ok;
 
-                ushort ackEventId = _pendingDisconnectEventId == EventId.EGS_DISCONNECT_FOR_SERVER_SELECT_REQ
+                EventId ackEventId = _pendingDisconnectEventId == EventId.EGS_DISCONNECT_FOR_SERVER_SELECT_REQ
                     ? EventId.EGS_DISCONNECT_FOR_SERVER_SELECT_ACK
                     : EventId.EGS_DISCONNECT_FOR_CHANNEL_CHANGE_ACK;
                 SendPacket(ackEventId, new KPacketOK { Ok = ackOk });
@@ -15169,7 +15170,7 @@ public sealed class KGSUser : KActor
                         EventId.EGIANT_INFO_REQUESTID_ACK, new KEGIANT_INFO_REQUESTID_ACK
                         {
                             UserName = ActiveUnit.NickName,
-                            Account = AccountId,
+                            Account = UserId,
                             GiantUid = (uint)ActiveUnit.UnitUid,
                         });
                 }
@@ -15419,7 +15420,7 @@ public sealed class KGSUser : KActor
             {
                 var ack = ev.GetPayload<KEGS_INVITE_PARTY_ACK>(Region);
                 if (string.IsNullOrEmpty(ack.UdpRelayIp))
-                    ack.UdpRelayIp = _server.Region.PublicIp;
+                    ack.UdpRelayIp = _server.PublicIp;
                 if (ack.UdpRelayPort == 0)
                     ack.UdpRelayPort = _server.UdpRelayPort;
                 SendPacket(EventId.EGS_INVITE_PARTY_ACK, ack);
@@ -15434,7 +15435,7 @@ public sealed class KGSUser : KActor
                     PartyUid = not.PartyUid,
                     HostUnitUid = not.PartyUserInfo.UnitUid,
                     HostNickName = not.PartyUserInfo.NickName,
-                    UdpRelayIp = _server.Region.PublicIp,
+                    UdpRelayIp = _server.PublicIp,
                     UdpRelayPort = _server.UdpRelayPort,
                 });
                 break;
@@ -15454,7 +15455,7 @@ public sealed class KGSUser : KActor
                     PartyInfos = party != null ? [party.Info] : [],
                     PartyUsers = party != null ? party.SnapshotMembers() : [],
                     CurPartyUnitUidList = party != null ? party.GetUnitUids() : [],
-                    UdpRelayIp = _server.Region.PublicIp,
+                    UdpRelayIp = _server.PublicIp,
                     UdpRelayPort = _server.UdpRelayPort,
                 });
                 break;
@@ -15800,7 +15801,7 @@ public sealed class KGSUser : KActor
                 SendPacket(EventId.EGS_INVITE_PARTY_ACK, new KEGS_INVITE_PARTY_ACK
                 {
                     Ok = ev.GetPayload<KPacketOK>(Region).Ok,
-                    UdpRelayIp = _server.Region.PublicIp,
+                    UdpRelayIp = _server.PublicIp,
                     UdpRelayPort = _server.UdpRelayPort,
                 });
                 break;
@@ -15915,9 +15916,9 @@ public sealed class KGSUser : KActor
                     if (ev.TryReadPayload<KDBE_RESET_GUILD_SKILL_REQ>(Region, out var resetReq))
                     {
                         skillId = resetReq.GuildSkillId;
-                        foreach (long delItemUid in resetReq.ItemQuantityUpdate.Deleted)
+                        foreach (var delItem in resetReq.ItemQuantityUpdate.Deleted)
                         {
-                            var (delOk, delSlot) = _server.Db.DeleteInventoryItem(ActiveUnit.UnitUid, delItemUid, 1);
+                            var (delOk, delSlot) = _server.Db.DeleteInventoryItem(ActiveUnit.UnitUid, delItem.ItemUid, 1);
                             if (delOk) updated.Add(delSlot);
                         }
                         if (updated.Count == 0 && resetReq.UpdatedInventorySlot.Count > 0)
@@ -16310,7 +16311,7 @@ public sealed class KGSUser : KActor
                         Ok = ack.Ok,
                         RoomInfo = ack.RoomInfo,
                         Slots = ack.Slots,
-                        UdpRelayIp = _server.Region.PublicIp,
+                        UdpRelayIp = _server.PublicIp,
                         UdpRelayPort = _server.UdpRelayPort,
                     });
                 }
@@ -16396,7 +16397,7 @@ public sealed class KGSUser : KActor
                     Ok = ack.Ok,
                     RoomInfo = ack.RoomInfo,
                     Slots = ack.Slots,
-                    UdpRelayIp = _server.Region.PublicIp,
+                    UdpRelayIp = _server.PublicIp,
                     UdpRelayPort = _server.UdpRelayPort,
                 });
                 break;
@@ -16464,7 +16465,7 @@ public sealed class KGSUser : KActor
                             RoomName = joinAck.RoomInfo.RoomName,
                             MaxSlot = joinAck.RoomInfo.MaxSlot,
                             JoinSlot = joinAck.RoomInfo.JoinSlot,
-                            RelayIp = _server.Region.PublicIp,
+                            RelayIp = _server.PublicIp,
                             Port = _server.UdpRelayPort,
                         },
                     });
@@ -16487,7 +16488,7 @@ public sealed class KGSUser : KActor
                         Ok = joinAck.Ok,
                         RoomInfo = joinAck.RoomInfo,
                         Slots = joinAck.Slots,
-                        UdpRelayIp = _server.Region.PublicIp,
+                        UdpRelayIp = _server.PublicIp,
                         UdpRelayPort = _server.UdpRelayPort,
                     });
                 break;
@@ -16540,7 +16541,7 @@ public sealed class KGSUser : KActor
                 else
                 {
                     int curMapId = CurrentFieldMapId > 0 ? CurrentFieldMapId : (ActiveUnit?.LastPos.MapId ?? 0);
-                    bool isBossField = _server.Global.FieldBossManager.BossFieldPortalList.Any(p => p.BattleFieldId == curMapId) || curMapId >= 50000;
+                    bool isBossField = curMapId == _server.Global.FieldBossManager.PortalDestination || curMapId >= 50000;
                     int returnMapId = isBossField && ActiveUnit != null
                         ? _server.GetPossibleEnterVillageMapId(ActiveUnit.Level, ActiveUnit.DungeonClear, curMapId)
                         : curMapId;
@@ -16659,7 +16660,7 @@ public sealed class KGSUser : KActor
                         var updatedSlots = new List<KInventoryItemInfo>();
                         if (dbReq.SellUnitUid == ActiveUnit.UnitUid)
                         {
-                            EdManager.TryAddEd(dbReq.SellUnitEDIN, KUserEDManager.EdReason.ErInEdPersonalShopSellItem, out int nextEd);
+                            EdManager.TryAddEd(dbReq.SellUnitEDIN, KUserEDManager.EdReason.ErSetEdPersonalShopSellItem, out int nextEd);
                             ActiveUnit.Ed = nextEd;
                             _server.Db.SetUnitEd(ActiveUnit.UnitUid, nextEd);
                             if (dbReq.SellItemInfo.ItemUid > 0)
@@ -16676,7 +16677,7 @@ public sealed class KGSUser : KActor
                         }
                         if (dbReq.BuyUnitUid == ActiveUnit.UnitUid)
                         {
-                            EdManager.TryAddEd(dbReq.BuyUnitEDOUT, KUserEDManager.EdReason.ErOutEdPersonalShopBuyItem, out int nextEd);
+                            EdManager.TryAddEd(dbReq.BuyUnitEDOUT, KUserEDManager.EdReason.ErSetEdPersonalShopBuyItem, out int nextEd);
                             ActiveUnit.Ed = nextEd;
                             _server.Db.SetUnitEd(ActiveUnit.UnitUid, nextEd);
                             if (dbReq.BuyItemInfo.ItemUid > 0)
@@ -16702,7 +16703,7 @@ public sealed class KGSUser : KActor
                     var updatedSlots = new List<KInventoryItemInfo>();
                     if (ermBuy.SellUnitUid == ActiveUnit.UnitUid)
                     {
-                        EdManager.TryAddEd(ermBuy.SellUnitEDIN, KUserEDManager.EdReason.ErInEdPersonalShopSellItem, out int nextEd);
+                        EdManager.TryAddEd(ermBuy.SellUnitEDIN, KUserEDManager.EdReason.ErSetEdPersonalShopSellItem, out int nextEd);
                         ActiveUnit.Ed = nextEd;
                         _server.Db.SetUnitEd(ActiveUnit.UnitUid, nextEd);
                         if (ermBuy.SellIntemInfoOUT.ItemUid > 0)
@@ -16713,7 +16714,7 @@ public sealed class KGSUser : KActor
                     }
                     else if (ermBuy.PriceUnitUid == ActiveUnit.UnitUid)
                     {
-                        EdManager.TryAddEd(ermBuy.PriceUnitEDOUT, KUserEDManager.EdReason.ErOutEdPersonalShopBuyItem, out int nextEd);
+                        EdManager.TryAddEd(ermBuy.PriceUnitEDOUT, KUserEDManager.EdReason.ErSetEdPersonalShopBuyItem, out int nextEd);
                         ActiveUnit.Ed = nextEd;
                         _server.Db.SetUnitEd(ActiveUnit.UnitUid, nextEd);
                         if (ermBuy.PriceIntemInfoIN.ItemUid > 0)
@@ -16927,8 +16928,9 @@ public sealed class KGSUser : KActor
                     _server.Router.Send(PerformerTypeId, ActiveUnit.UnitUid, PerformerId.PI_CENTER_SERVER, _server.Center.Uid,
                         EventId.ERM_LEAVE_ROOM_REQ, new KERM_LEAVE_ROOM_REQ
                         {
+                            RoomUid = CurrentRoomUid,
+                            UnitUid = ActiveUnit.UnitUid,
                             Reason = NetError.NOT_LEAVE_ROOM_REASON_22,
-                            ItemId = reqItem,
                         });
                 }
                 break;
@@ -16965,6 +16967,8 @@ public sealed class KGSUser : KActor
                         _server.Router.Send(PerformerTypeId, ActiveUnit.UnitUid, PerformerId.PI_CENTER_SERVER, _server.Center.Uid,
                             EventId.ERM_LEAVE_BATTLE_FIELD_FOR_PVP_GAME_START_REQ, new KERM_LEAVE_ROOM_REQ
                             {
+                                RoomUid = CurrentRoomUid,
+                                UnitUid = ActiveUnit.UnitUid,
                                 Reason = NetError.NOT_LEAVE_ROOM_REASON_32,
                             });
                         CurrentRoomUid = 0;
@@ -17142,7 +17146,7 @@ public sealed class KGSUser : KActor
                     var room = _server.Center.RoomManager.GetRoom(CurrentRoomUid);
                     if (room?.Info.RoomType == 1)
                     {
-                        Statistics.IncreaseCount(KUserStatistics.UsTable.CharacterData, 0, 1, 1);
+                        Statistics.IncreaseCount(KUserStatistics.UsTable.EtcData, 0, 1, 1);
                         SendPacket(EventId.EGS_HENIR_REWARD_COUNT_NOT, new KEGS_HENIR_REWARD_COUNT_NOT
                         {
                             UnLimited = DungeonManager.UnlimitedHenirRewardEvent,
@@ -17277,12 +17281,13 @@ public sealed class KGSUser : KActor
                     int curMap = CurrentFieldMapId > 0 ? CurrentFieldMapId : (ActiveUnit?.LastPos.MapId ?? 0);
                     if (curMap >= 50000)
                     {
-                        UnitManager.ReserveReturnToFieldInfo(new KUserUnitManager.KReturnToFieldInfo(
-                            resAll.ReturnToFieldInfo.MapId,
-                            resAll.ReturnToFieldInfo.StartPosIndex,
-                            resAll.ReturnToFieldInfo.PosX,
-                            resAll.ReturnToFieldInfo.PosY,
-                            resAll.ReturnToFieldInfo.PosZ));
+                        if (ActiveUnit != null)
+                        {
+                            UnitManager.ReserveReturnToFieldInfo(new KUserUnitManager.KReturnToFieldInfo(
+                                ActiveUnit.LastPos.MapId,
+                                ActiveUnit.LastPos.LastTouchLineIndex,
+                                0f, 0f, 0f));
+                        }
                     }
                     else if (ActiveUnit != null && CurrentRoomUid > 0)
                     {
@@ -17290,7 +17295,7 @@ public sealed class KGSUser : KActor
                             EventId.ERM_NEXT_RETURN_TO_FIELD_NOT, new KERM_COMPLETE_RETURN_TO_FIELD_NOT
                             {
                                 UnitUid = ActiveUnit.UnitUid,
-                                FieldMapId = resAll.ReturnToFieldInfo.MapId,
+                                FieldMapId = ActiveUnit.LastPos.MapId,
                             });
                     }
                     SendPacket(EventId.EGS_RESULT_ALL_UNIT_SUCCESS_NOT, resAll);
@@ -17447,7 +17452,11 @@ public sealed class KGSUser : KActor
                 if (room?.Info.RoomType == 3 && ActiveUnit != null)
                 {
                     _server.Router.Send(PerformerTypeId, ActiveUnit.UnitUid, PerformerId.PI_CENTER_SERVER, _server.Center.Uid,
-                        EventId.ERM_LEAVE_ROOM_FOR_WORKINGS_BLOCK_REQ, new KERM_LEAVE_ROOM_REQ());
+                        EventId.ERM_LEAVE_ROOM_FOR_WORKINGS_BLOCK_REQ, new KERM_LEAVE_ROOM_REQ
+                        {
+                            RoomUid = CurrentRoomUid,
+                            UnitUid = ActiveUnit.UnitUid,
+                        });
                 }
                 else
                 {
@@ -17606,7 +17615,7 @@ public sealed class KGSUser : KActor
                     Ok = cmlJoin.Ok,
                     RoomInfo = cmlJoin.RoomInfo,
                     Slots = cmlJoin.Slots,
-                    UdpRelayIp = _server.Region.PublicIp,
+                    UdpRelayIp = _server.PublicIp,
                     UdpRelayPort = _server.UdpRelayPort,
                 });
                 break;
@@ -18106,7 +18115,7 @@ public sealed class KGSUser : KActor
             GuildName = ActiveUnit.UserGuildInfo.GuildName,
             GuildUid = ActiveUnit.UserGuildInfo.GuildUid,
             Pet = summonedPet != null ? [summonedPet] : [],
-            GoingQuestInfo = QuestManager.GetActiveQuests().Select(q => q.QuestId).ToHashSet(),
+            GoingQuestInfo = QuestManager.GetActiveQuests().Select(q => q.Id).ToHashSet(),
         };
     }
 
@@ -18146,7 +18155,7 @@ public sealed class KGSUser : KActor
             State = onlineUser != null ? (sbyte)1 : (sbyte)0,
             PartyUid = onlineUser?.CurrentPartyUid ?? 0,
             RoomUid = onlineUser?.CurrentRoomUid ?? 0,
-            StateCode = onlineUser?.CurrentFieldMapId ?? unit.MapId,
+            StateCode = onlineUser?.CurrentFieldMapId ?? unit.LastPos.MapId,
             GuildName = unit.UserGuildInfo.GuildName,
             LocalRankingUserInfo = lrInfo,
         };

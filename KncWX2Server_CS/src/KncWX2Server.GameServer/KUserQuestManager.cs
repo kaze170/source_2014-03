@@ -290,7 +290,7 @@ public sealed class KUserQuestManager
                     var sq = kv.Value.SubQuests[i];
                     if (sq.IsSuccess || !predicate(g)) continue;
                     int target = Math.Max(1, g.TargetCount);
-                    sq.ClearData = Math.Min(target, sq.ClearData + Math.Max(1, delta));
+                    sq.ClearData = (byte)Math.Min(byte.MaxValue, Math.Min(target, sq.ClearData + Math.Max(1, delta)));
                     if (sq.ClearData >= target) sq.IsSuccess = true;
                     touched = true;
                 }

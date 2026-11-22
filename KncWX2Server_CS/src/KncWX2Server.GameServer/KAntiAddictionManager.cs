@@ -30,7 +30,7 @@ public sealed class KAntiAddictionManager
 
     public void Initialize(RegionProfile region, bool isAdult, TimeSpan priorPlayTime, TimeSpan offlineDuration)
     {
-        IsEnabled = region.Code == RegionCode.CN && !isAdult;
+        IsEnabled = region.Region == RegionCode.CN && !isAdult;
         IsAdult = isAdult;
         _sessionStartUtc = DateTime.UtcNow;
         _accumulatedPlayTime = offlineDuration >= RestResetThreshold

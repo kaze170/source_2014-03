@@ -35,6 +35,7 @@ public sealed class KUserSkillTree
     public int AvailableSkillPoints { get; private set; }
     public int AvailableCashSkillPoints { get; private set; }
     public int MaxCashSkillPoints { get; set; }
+    public string CashSkillPointEndDate { get; set; } = string.Empty;
     public bool HasSkillNote { get; set; } = true;
     public sbyte SkillNoteMaxPageNum { get; set; } = 3;
 

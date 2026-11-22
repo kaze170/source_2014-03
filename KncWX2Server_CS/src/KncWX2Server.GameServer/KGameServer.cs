@@ -60,6 +60,7 @@ public sealed class KGameServer : KBaseServer
     public KRewardTable RewardTable { get; } = new();
     public KSpiritTable SpiritTable { get; } = new();
     public KExpTable ExpTable => Db.ExpTable;
+    public ConcurrentDictionary<EventId, long> ServerCounters { get; } = new();
     public KScriptRefreshManager ScriptRefreshManager { get; private set; } = null!;
     public KRecommendUserTable RecommendUserTable { get; } = new();
     public KTrainingCenterTable TrainingCenterTable { get; } = new();
@@ -640,11 +641,11 @@ public sealed class KGameServer : KBaseServer
                     {
                         Rank = rank++,
                         StageCount = r.stageCount,
-                        PlayTime = r.clearTimeSec,
+                        PlayTime = (uint)Math.Max(0, r.clearTimeSec),
                         RegDate = new DateTimeOffset(r.recordedUtc).ToUnixTimeSeconds(),
                         UnitUid = r.unitUid,
                         NickName = r.nickName,
-                        UnitClass = r.unitClass,
+                        UnitClass = (sbyte)r.unitClass,
                         Level = r.level,
                     };
                     ack.HenirRankingPage.Add(row);
@@ -999,7 +1000,7 @@ public sealed class KGameServer : KBaseServer
             case EventId.ECN_NOTIFY_MSG_NOT:
             {
                 var not = ev.GetPayload<KncWX2Server.Core.Packets.KECN_NOTIFY_MSG_NOT>(Region);
-                BroadcastNotice(not.NotifyType, not.Count, not.Message);
+                BroadcastNotice(not.NotifyType, (sbyte)Math.Clamp(not.Count, 1, sbyte.MaxValue), not.Message);
                 break;
             }
 
@@ -1029,7 +1030,7 @@ public sealed class KGameServer : KBaseServer
             case EventId.ECN_CHECK_INVALID_PVP_USER_NOT:
             {
                 var pkt = ev.GetPayload<KncWX2Server.Core.Packets.KPacketLong>(Region);
-                if (pkt.Value > 0 && TryGetUserByUnitUid(pkt.Value, out var u))
+                if (pkt.Value > 0 && GetUserByUnitUid(pkt.Value) is { } u)
                     u.SendPacket(EventId.E_KICK_USER_NOT, new KncWX2Server.Core.Packets.KPacketOK { Ok = NetError.ERR_MATCH_MAKING_15 });
                 break;
             }
@@ -1173,8 +1174,8 @@ public sealed class KGameServer : KBaseServer
             }
 
             case EventId.ELG_ADMIN_KICK_USER_ACK:
-                if (ev.FirstSenderUid > 0 && ev.InProcessPayload != null)
-                    SendToUnit(ev.FirstSenderUid, EventId.ELG_ADMIN_KICK_USER_ACK, ev.InProcessPayload);
+                if (ev.FirstSenderUid > 0 && ev.InProcessPayload is IKSerializable kickAck)
+                    SendToUnit(ev.FirstSenderUid, EventId.ELG_ADMIN_KICK_USER_ACK, kickAck);
                 break;
 
             case EventId.ELG_GET_GUILD_INFO_ACK:
@@ -1268,7 +1269,7 @@ public sealed class KGameServer : KBaseServer
                 var not = ev.GetPayload<KncWX2Server.Core.Packets.KEGB_JACKPOT_EVENT_POST_NOT>(Region);
                 if (not.UnitUid > 0)
                 {
-                    Db.SendLetter(Region, 0, "GM", not.UnitUid, not.NickName,
+                    Db.SendLetter(Region, 0, "GM", not.UnitUid,
                         "Jackpot Event Reward", $"Reward Item #{not.RewardItemId}", not.RewardItemId, Math.Max(1, not.Quantity), 0);
                 }
                 break;
@@ -1306,7 +1307,7 @@ public sealed class KGameServer : KBaseServer
             {
                 var not = ev.GetPayload<KncWX2Server.Core.Packets.KELG_KICK_RESULT_LETTER_NOT>(Region);
                 if (not.TargetUnitUid > 0)
-                    Db.SendLetter(Region, 0, "Guild", not.TargetUnitUid, string.Empty,
+                    Db.SendLetter(Region, 0, "Guild", not.TargetUnitUid,
                         "Guild Notice", $"Removed from guild [{not.GuildName}].", 0, 0, 0);
                 break;
             }
@@ -1315,7 +1316,7 @@ public sealed class KGameServer : KBaseServer
             {
                 var not = ev.GetPayload<KncWX2Server.Core.Packets.KELG_SEND_LETTER_JOIN_GUILD_NOT>(Region);
                 if (not.TargetUnitUid > 0)
-                    Db.SendLetter(Region, 0, "Guild", not.TargetUnitUid, string.Empty,
+                    Db.SendLetter(Region, 0, "Guild", not.TargetUnitUid,
                         "Guild Welcome", $"Joined guild [{not.GuildName}].", 0, 0, 0);
                 break;
             }
@@ -1332,7 +1333,7 @@ public sealed class KGameServer : KBaseServer
             {
                 var not = ev.GetPayload<KncWX2Server.Core.Packets.KELG_WEB_POINT_REWARD_INSERT_TO_POST_NOT>(Region);
                 if (not.UnitUid > 0 && not.ItemId > 0)
-                    Db.SendLetter(Region, 0, "System", not.UnitUid, string.Empty,
+                    Db.SendLetter(Region, 0, "System", not.UnitUid,
                         "Web Point Reward", $"Reward Item #{not.ItemId}", not.ItemId, Math.Max(1, not.Quantity), 0);
                 break;
             }
@@ -1541,8 +1542,8 @@ public sealed class KGameServer : KBaseServer
             case EventId.ERM_INCREASE_PARTY_FEVER_NOT:
             case EventId.ERM_MAX_PARTY_FEVER_NOT:
             {
-                if (ev.FirstSenderUid > 0 && ev.InProcessPayload != null)
-                    SendToUnit(ev.FirstSenderUid, ev.EventId, ev.InProcessPayload);
+                if (ev.FirstSenderUid > 0 && ev.InProcessPayload is IKSerializable serPayload)
+                    SendToUnit(ev.FirstSenderUid, ev.EventId, serPayload);
                 break;
             }
 
