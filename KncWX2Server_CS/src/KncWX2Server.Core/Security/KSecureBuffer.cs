@@ -11,6 +11,7 @@ namespace KncWX2Server.Core.Security;
 public sealed class KSecureBuffer
 {
     private readonly KSADatabase _saDb;
+    private readonly ushort? _expectedSpi;
     private ushort _spi;
     private byte[] _rawBuffer = [];
 
@@ -28,6 +29,19 @@ public sealed class KSecureBuffer
             _spi = BinaryPrimitives.ReadUInt16LittleEndian(_rawBuffer.AsSpan(0, 2));
     }
 
+    /// <summary>
+    /// Receive-side constructor matching C++ KSecureBuffer(SpiType nSPI, const void* pRecvData, unsigned long nBytes).
+    /// Looks up the SA using <paramref name="expectedSpi"/> (the server session's active SPI) rather than the
+    /// header SPI field, because the C++ client replaces m_nSPIndex with a client-local random SPI in SADatabase::Insert.
+    /// </summary>
+    public KSecureBuffer(KSADatabase saDb, ushort expectedSpi, ReadOnlySpan<byte> wireBytes)
+    {
+        _saDb = saDb;
+        _expectedSpi = expectedSpi;
+        _spi = expectedSpi;
+        _rawBuffer = wireBytes.ToArray();
+    }
+
     public ushort Spi => _spi;
     public ReadOnlySpan<byte> WireBytes => _rawBuffer;
 
@@ -42,10 +56,8 @@ public sealed class KSecureBuffer
         uint seqNum = sa.GetSequenceNum();
         byte[] iv = sa.GenerateIV();
 
-        // RFC 2406 padding: padLen bytes + 1 byte padLen itself, aligned to 8-byte DES block
-        int totalBeforePad = plainPayload.Length + 1;
-        int rem = totalBeforePad % KSecurityAssociation.BlockSize;
-        int padBytes = rem == 0 ? 0 : KSecurityAssociation.BlockSize - rem;
+        // RFC 2406 padding matching SecureBuffer.cpp GeneratePadding: 1..BlockSize pad bytes + 1 byte padLen
+        int padBytes = KSecurityAssociation.BlockSize - ((plainPayload.Length + 1) % KSecurityAssociation.BlockSize);
 
         byte[] padded = new byte[plainPayload.Length + padBytes + 1];
         plainPayload.CopyTo(padded);
@@ -78,34 +90,49 @@ public sealed class KSecureBuffer
     /// Verifies ICV and sequence number matching KSecureBuffer::IsAuthentic_notRWM.
     /// </summary>
     public bool IsAuthentic(bool checkSequenceNum = true)
-        => IsAuthentic(out _, checkSequenceNum);
+        => IsAuthentic(out _, out _, checkSequenceNum);
 
     public bool IsAuthentic(out bool sequenceMismatch, bool checkSequenceNum = true)
+        => IsAuthentic(out sequenceMismatch, out _, checkSequenceNum);
+
+    public bool IsAuthentic(out bool sequenceMismatch, out string failureReason, bool checkSequenceNum = true)
     {
         sequenceMismatch = false;
+        failureReason = string.Empty;
         const int minSize = 2 + 4 + KSecurityAssociation.IvSize + KSecurityAssociation.BlockSize + KSecurityAssociation.IcvSize;
         if (_rawBuffer.Length < minSize)
+        {
+            failureReason = $"TooShort(len={_rawBuffer.Length})";
             return false;
+        }
 
-        _spi = BinaryPrimitives.ReadUInt16LittleEndian(_rawBuffer.AsSpan(0, 2));
+        ushort packetSpi = BinaryPrimitives.ReadUInt16LittleEndian(_rawBuffer.AsSpan(0, 2));
         uint seqNum = BinaryPrimitives.ReadUInt32LittleEndian(_rawBuffer.AsSpan(2, 4));
+        _spi = _expectedSpi ?? packetSpi;
 
         var sa = _saDb.GetSA(_spi);
         if (sa == null)
+        {
+            failureReason = $"UnknownSpi(pktSpi={packetSpi},lookupSpi={_spi})";
             return false;
+        }
 
         int authDataLen = _rawBuffer.Length - KSecurityAssociation.IcvSize;
         ReadOnlySpan<byte> icvActual = _rawBuffer.AsSpan(authDataLen, KSecurityAssociation.IcvSize);
         byte[] icvExpected = sa.GenerateICV(_rawBuffer.AsSpan(0, authDataLen));
 
         if (!CryptographicOperations.FixedTimeEquals(icvActual, icvExpected))
+        {
+            failureReason = $"IcvMismatch(pktSpi={packetSpi},lookupSpi={_spi},seq={seqNum},len={_rawBuffer.Length})";
             return false;
+        }
 
         if (checkSequenceNum && _spi != 0)
         {
             if (!sa.IsValidSequenceNumNotRwm(seqNum))
             {
                 sequenceMismatch = true;
+                failureReason = $"SequenceMismatch(seq={seqNum},spi={_spi})";
                 return false;
             }
         }
@@ -117,43 +144,65 @@ public sealed class KSecureBuffer
     /// Decrypts ciphertext and strips RFC 2406 padding, matching KSecureBuffer::GetPayload_notRWM.
     /// </summary>
     public bool TryGetPayload(out byte[] payload, bool authentic = true, bool checkSequenceNum = true)
-        => TryGetPayload(out payload, out _, authentic, checkSequenceNum);
+        => TryGetPayload(out payload, out _, out _, authentic, checkSequenceNum);
 
     public bool TryGetPayload(out byte[] payload, out bool sequenceMismatch, bool authentic = true, bool checkSequenceNum = true)
+        => TryGetPayload(out payload, out sequenceMismatch, out _, authentic, checkSequenceNum);
+
+    public bool TryGetPayload(out byte[] payload, out bool sequenceMismatch, out string failureReason, bool authentic = true, bool checkSequenceNum = true)
     {
         payload = [];
         sequenceMismatch = false;
-        if (authentic && !IsAuthentic(out sequenceMismatch, checkSequenceNum))
+        failureReason = string.Empty;
+        if (authentic && !IsAuthentic(out sequenceMismatch, out failureReason, checkSequenceNum))
             return false;
 
         const int headerLen = 2 + 4 + KSecurityAssociation.IvSize;
         if (_rawBuffer.Length < headerLen + KSecurityAssociation.BlockSize + KSecurityAssociation.IcvSize)
+        {
+            failureReason = $"TooShortForDecrypt(len={_rawBuffer.Length})";
             return false;
+        }
 
         var sa = _saDb.GetSA(_spi);
         if (sa == null)
+        {
+            failureReason = $"UnknownSpiDecrypt(lookupSpi={_spi})";
             return false;
+        }
 
         ReadOnlySpan<byte> iv = _rawBuffer.AsSpan(6, KSecurityAssociation.IvSize);
         int cipherLen = _rawBuffer.Length - headerLen - KSecurityAssociation.IcvSize;
         if (cipherLen <= 0 || cipherLen % KSecurityAssociation.BlockSize != 0)
+        {
+            failureReason = $"UnalignedCipher(cipherLen={cipherLen})";
             return false;
+        }
 
         ReadOnlySpan<byte> cipher = _rawBuffer.AsSpan(headerLen, cipherLen);
         byte[] plain = sa.Decrypt(iv, cipher);
         if (plain.Length == 0)
+        {
+            failureReason = "EmptyPlaintext";
             return false;
+        }
 
         byte padLen = plain[^1];
         if (padLen >= plain.Length)
+        {
+            failureReason = $"InvalidPadLen(padLen={padLen},plainLen={plain.Length})";
             return false;
+        }
 
         // Validate RFC 2406 padding sequence [1..padLen]
         int payloadLen = plain.Length - 1 - padLen;
         for (int i = 0; i < padLen; i++)
         {
             if (plain[payloadLen + i] != (byte)(i + 1))
+            {
+                failureReason = $"InvalidPadByte(padLen={padLen},idx={i})";
                 return false;
+            }
         }
 
         payload = plain[..payloadLen];

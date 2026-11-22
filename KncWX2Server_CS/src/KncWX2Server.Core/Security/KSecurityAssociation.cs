@@ -43,14 +43,21 @@ public sealed class KSecurityAssociation : IKSerializable
 
     public static KSecurityAssociation CreateRandom()
     {
-        // Note: C++ ResetRandomizeKey draws bytes in [1..255]
+        // Note: C++ ResetRandomizeKey draws bytes in [1..255]; avoid DES weak/semi-weak keys on .NET.
         byte[] auth = new byte[KeySize];
         byte[] crypto = new byte[KeySize];
         for (int i = 0; i < KeySize; i++)
-        {
             auth[i] = (byte)RandomNumberGenerator.GetInt32(1, 256);
-            crypto[i] = (byte)RandomNumberGenerator.GetInt32(1, 256);
+
+        do
+        {
+            for (int i = 0; i < KeySize; i++)
+                crypto[i] = (byte)RandomNumberGenerator.GetInt32(1, 256);
         }
+#pragma warning disable SYSLIB0021
+        while (DES.IsWeakKey(crypto) || DES.IsSemiWeakKey(crypto));
+#pragma warning restore SYSLIB0021
+
         return new KSecurityAssociation(auth, crypto);
     }
 

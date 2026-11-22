@@ -85,6 +85,30 @@ public sealed class SerializationAndCryptoTests
         Assert.False(replay.TryGetPayload(out _, authentic: true, checkSequenceNum: true));
     }
 
+    [Fact]
+    public void KSecureBuffer_ClientLocalSpiDiffersFromServerSpi_DecryptsViaExpectedSpi()
+    {
+        // Simulates X2ServerProtocol KSession::OnRecvCompleted(E_ACCEPT_CONNECTION_NOT) + SADatabase::Insert(OUT SpiType&),
+        // where the client stores the server's SA under a different client-local SPI and stamps that SPI in packet headers.
+        var serverSaDb = new KSADatabase();
+        ushort serverSpi = serverSaDb.CreateNewSA(out var serverSa);
+
+        var clientSaDb = new KSADatabase();
+        ushort clientSpi = (ushort)(serverSpi == 12345 ? 54321 : 12345);
+        Assert.True(clientSaDb.Insert(clientSpi, serverSa.Clone()));
+
+        byte[] payload = "ECH_VERIFY_ACCOUNT_REQ"u8.ToArray();
+        var clientPacket = new KSecureBuffer(clientSaDb, clientSpi);
+        Assert.True(clientPacket.Create(payload));
+
+        // Server receive-side uses serverSpi (like C++ KSecureBuffer(spSession->m_nSPIndex, ...))
+        var serverRecv = new KSecureBuffer(serverSaDb, serverSpi, clientPacket.WireBytes.ToArray());
+        Assert.True(serverRecv.TryGetPayload(out byte[] decrypted, out bool seqMismatch, out string reason, authentic: true, checkSequenceNum: true));
+        Assert.False(seqMismatch);
+        Assert.Equal(string.Empty, reason);
+        Assert.Equal(payload, decrypted);
+    }
+
     [Theory]
     [InlineData(RegionCode.TW)]
     [InlineData(RegionCode.HK)]

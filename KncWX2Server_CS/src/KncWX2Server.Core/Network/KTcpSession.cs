@@ -187,8 +187,8 @@ public sealed class KTcpSession : IAsyncDisposable
                 if (!await ReadExactAsync(secData, _cts.Token).ConfigureAwait(false))
                     break;
 
-                var sec = new KSecureBuffer(_saDb, secData);
-                if (!sec.TryGetPayload(out byte[] payload, out bool sequenceMismatch, authentic: true, checkSequenceNum: CheckSequenceNum))
+                var sec = new KSecureBuffer(_saDb, _currentSpi, secData);
+                if (!sec.TryGetPayload(out byte[] payload, out bool sequenceMismatch, out string failureReason, authentic: true, checkSequenceNum: CheckSequenceNum))
                 {
                     if (sequenceMismatch)
                     {
@@ -199,7 +199,7 @@ public sealed class KTcpSession : IAsyncDisposable
                         });
                     }
                     _authFailCount++;
-                    KLog.Cwarn($"Packet auth/decrypt failed ({_authFailCount}/{PacketAuthFailLimit}) from {RemoteIp}:{RemotePort}");
+                    KLog.Cwarn($"Packet auth/decrypt failed ({_authFailCount}/{PacketAuthFailLimit}) [{failureReason}] from {RemoteIp}:{RemotePort}");
                     if (PacketAuthFailLimit > 0 && _authFailCount >= PacketAuthFailLimit)
                     {
                         KLog.Cerr($"AuthFailLimit exceeded for {RemoteIp}:{RemotePort}, disconnecting.");
